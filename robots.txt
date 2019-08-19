@@ -1,0 +1,5 @@
+Sitemap: http://basiliscos.github.io/sitemap.xml
+User-Agent: *
+Disallow:
+
+
