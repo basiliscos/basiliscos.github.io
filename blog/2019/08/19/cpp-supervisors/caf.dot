@@ -1,0 +1,15 @@
+digraph G {
+"system" [ shape = box];
+
+"system" -> "supervisor_root";
+"system" -> "supervisor_child";
+"system" -> "A1";
+"system" -> "A2";
+"system" -> "A3";
+
+"supervisor_root" -> "supervisor_child" [style = "dotted"];
+"supervisor_child" -> "A1" [style = "dotted"];
+"supervisor_child" -> "A2" [style = "dotted"];
+"supervisor_child" -> "A3" [style = "dotted"];
+
+}

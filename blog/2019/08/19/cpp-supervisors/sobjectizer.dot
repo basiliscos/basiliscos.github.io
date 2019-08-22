@@ -1,0 +1,18 @@
+digraph G {
+"environment", "coop_root", "coop_supervisor_child", "coop_child1", "coop_child2", "coop_child3" [ shape = box];
+
+"environment" -> "coop_root";
+"coop_root" -> "supervisor_root";
+"coop_root" -> "coop_supervisor_child";
+"coop_supervisor_child" -> "supervisor_child";
+"coop_supervisor_child" -> "coop_child1";
+"coop_supervisor_child" -> "coop_child2";
+"coop_supervisor_child" -> "coop_child3";
+"coop_child1" -> "A1";
+"coop_child2" -> "A2";
+"coop_child3" -> "A3";
+"supervisor_root" -> "coop_supervisor_child" [style = "dotted"];
+"supervisor_child" -> "coop_child1" [style = "dotted"];
+"supervisor_child" -> "coop_child2" [style = "dotted"];
+"supervisor_child" -> "coop_child3" [style = "dotted"];
+}

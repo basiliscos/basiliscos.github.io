@@ -1,0 +1,12 @@
+digraph G {
+"system_context" [ shape = box];
+
+"supervisor_root", "supervisor_1", "supervisor_2" [fillcolor=yellow, style=filled];
+"supervisor_3" [fillcolor=aquamarine, style=filled];
+
+"system_context" -> "supervisor_root";
+"supervisor_root" -> "supervisor_1";
+"supervisor_root" -> "supervisor_2";
+"supervisor_root" -> "supervisor_3";
+
+}
