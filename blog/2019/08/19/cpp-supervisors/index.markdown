@@ -7,8 +7,9 @@ title: Trees of Supervisors in C++ (caf, sobjectizer, rotor)
 [caf-monitor]: https://actor-framework.readthedocs.io/en/latest/MessagePassing.html#down-handler
 [caf]: https://actor-framework.org/
 [sobjectizer]: https://github.com/Stiffstream/sobjectizer
+[sobjectizer-underhood]: https://bitbucket.org/sobjectizerteam/sobjectizer/wiki/so-5.6-docs/tutorials/underhood.md
 [rotor]: https://github.com/basiliscos/cpp-rotor/
-[boost-asio]: https://www.boost.org/doc/libs/release/libs/asio/ "Boost Asio"
+[boost-asio]: https://www.boost.org:/doc/libs/release/libs/asio/ "Boost Asio"
 
 
 # The notion of supervisor & trees of supervisors
@@ -71,8 +72,8 @@ similar role to `system` in [caf]). `cooperations` can create child `cooperation
 thus making a hierarchy.
 
 However, it should be noted, that `cooperation` in [sobjectizer] *in not an actor*;
-they have quite a different API and embedding own `cooperation` type seems
-non-trivial task (comparing to creating own actor type).
+it is the type provided by [sobjectizer] and there is no possibility to roll 
+your own implementation.
 
 The `cooperation` in [sobjectizer] is some kind of supervisable group of actors,
 as it requires that all actors to be started and successfully registered; if
@@ -88,23 +89,30 @@ to the appropriate event on the message box. However,this is not an individual
 actor shutdown event, it is *whole cooperation* shutdown event (`registration`
 or `deregistration`).
 
-Thus, there is no *direct* actor shutdown observation; only indirect. If
-there is need to observe individual actor shutdown, it should be the only
-actor on a `cooperation`, and the cooperation should be monitored; in
-the case of actor crash, it the new cooperation should be spawned, and
-the new actor should be spawned on it, and the monitoring subscription
-routine above should be repeated.
+Now follows my own vision how to get *fine-gained* supervising.
+
+Thus, there is no *direct* actor shutdown observation; only indirect (i.e. 
+via cooperation death notification). If there is need to observe individual 
+actor shutdown, it should be the only actor on a `cooperation`, and the 
+cooperation should be monitored; in the case of actor crash, it the new 
+cooperation should be spawned, and the new actor should be spawned on it, 
+and the monitoring subscription routine above should be repeated.
 
 This can be visualized as the following:
 
 ![sobjectizer.png](sobjectizer.png)
 
-It should be noted, however, that `cooperation` provides some kind of
-transactional semantics when it is applied to group of actors.
+However, this looks a little bit overcomplicated. Indeed, [sobjectizer]
+way of supervising is *coarse-grained* supervising: not individual actors
+should be supervised, but group of related actors (`cooperation`).
+
+![sobjectizer-coarse.png](sobjectizer-coarse.png)
+
+For more details, please refer [sobjectizer-underhood].
 
 # Supervising in Rotor
 
-In [rotor] we'd like to achieve Erlang-like supervising:
+In [rotor] we'd like to achieve *fine-gained* Erlang-like supervising:
 
 ![rotor.png](rotor.png)
 

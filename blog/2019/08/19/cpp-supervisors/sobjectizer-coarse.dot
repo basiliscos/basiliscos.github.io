@@ -1,0 +1,21 @@
+digraph G {
+compound=true;
+ranksep=1.3;
+
+"environment" [shape = box];
+"environment" -> "supervisor_root" [ lhead=cluster_gc_0 ];
+"environment" -> "A2" [ lhead=cluster_gc_1 ];
+
+subgraph cluster_gc_0 {
+    label = "coop_root";
+    "supervisor_root";
+}
+
+subgraph cluster_gc_1 {
+    label = "coop_child";
+    A1; A2; A3;
+}
+
+"supervisor_root" -> A1 [style = "dotted", lhead=cluster_gc_1];
+
+}
