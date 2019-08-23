@@ -64,6 +64,9 @@ runtime does not creates an hierarchy, i.e. it is flat:
 
 ![caf.png](caf.png)
 
+There is actors groupping capabilities in [caf], which allows to multicast 
+messages to all actors inside the group, e.g. shutdown messsage.
+
 ## sobjectizer
 
 In [sobjectizer] actors (agents, in the sobjectizer's terminology) are spawned
