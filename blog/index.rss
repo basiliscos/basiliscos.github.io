@@ -71,8 +71,8 @@ similar role to <code>system</code> in <a href="https://actor-framework.org/">ca
 thus making a hierarchy.</p>
 
 <p>However, it should be noted, that <code>cooperation</code> in <a href="https://github.com/Stiffstream/sobjectizer">sobjectizer</a> <em>in not an actor</em>;
-they have quite a different API and embedding own <code>cooperation</code> type seems
-non-trivial task (comparing to creating own actor type).</p>
+it is the type provided by <a href="https://github.com/Stiffstream/sobjectizer">sobjectizer</a> and there is no possibility to roll 
+your own implementation.</p>
 
 <p>The <code>cooperation</code> in <a href="https://github.com/Stiffstream/sobjectizer">sobjectizer</a> is some kind of supervisable group of actors,
 as it requires that all actors to be started and successfully registered; if
