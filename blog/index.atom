@@ -68,6 +68,9 @@ runtime does not creates an hierarchy, i.e. it is flat:</p>
 
 <p><img alt="caf.png" src="http://basiliscos.github.io/blog/2019/08/19/cpp-supervisors/caf.png"></p>
 
+<p>There is actors groupping capabilities in <a href="https://actor-framework.org/">caf</a>, which allows to multicast 
+messages to all actors inside the group, e.g. shutdown messsage.</p>
+
 <h2>sobjectizer</h2>
 
 <p>In <a href="https://github.com/Stiffstream/sobjectizer">sobjectizer</a> actors (agents, in the sobjectizer&#39;s terminology) are spawned
