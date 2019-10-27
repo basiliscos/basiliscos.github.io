@@ -936,7 +936,8 @@ The composability is done via lambdas (as in <code>CAF</code>), but
 the responses are redirected to different <code>mboxes</code> (as the
 ephemeral addresses in <code>rotor</code>).</p>
 
-<p>So, it is possible to get the same result with all considered frameworks.</p>
+<p>So, it is possible to get the same result with all considered 
+frameworks.</p>
 
 
 
