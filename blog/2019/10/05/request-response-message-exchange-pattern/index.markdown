@@ -591,7 +591,7 @@ lambdas, which leads to more compact code.
 
 However, it is still what it needed: reactive reactive request-response.
 
-# Request/Response compostability
+# Request/Response composability
 
 On the top of `request-response` pattern, the **ask pattern** can be developed.
 In short, an client-actor makes several of requests, and then, depending on the
@@ -874,7 +874,7 @@ becomes cumbersome.
 There is still additional requirements, that the provided by a framework
 support of request/response pattern did not come of cost of loosing 
 actor's *reactivity*; for simplicity, you may treat it as 
-dead-lock avoidance. Another nice-to-have feature would be compostability
+dead-lock avoidance. Another nice-to-have feature would be composability
 of the requests. 
 
 At the moment `sobjectizer` does not provides request/response pattern, 
@@ -883,8 +883,28 @@ however in the past it did, however it was *non-reactive*.
 Both `CAF` and `rotor` do provide request/response pattern keeping 
 still actors *reactive*. `CAF` has more compact code; the `rotor's` 
 code is more verbose. It seems that in `CAF` you should roll
-you own compostability of requests, i.e. develop context class 
+you own composability of requests, i.e. develop context class 
 and make it shared between different requests handlers. In `rotor`
-the compostability of requests seems more natural via creating
+the composability of requests seems more natural via creating
 ephemeral reply addresses, which can associate the linked group 
 of requests in single place. 
+
+# Update
+
+The `sobjectizer` author replied with separate
+[article](https://eao197.blogspot.com/2019/10/progc-follow-up-for-basiliscoss-article.html).
+, which I recommend to read.
+
+So, it should be updated, that [sobjetizer-extra](https://github.com/Stiffstream/so5extra)
+provides support for request-response pattern, but only via a bit
+different name (`async_op`, in the case). It is completely 
+asynchronous and free of dead-locks, i.e. **reactive**.
+
+It is also
+[composable](https://github.com/eao197/so5-request-reply-example/blob/master/dev/sample_composability_2/main.cpp),
+with the approximately same lines of code as `rotor` example. 
+The composability is done via lambdas (as in `CAF`), but 
+the responses are redirected to different `mboxes` (as the
+ephemeral addresses in `rotor`).
+
+So, it is possible to get the same result with all considered frameworks.
