@@ -1,5 +1,7 @@
 ---
 title: Trees of Supervisors in C++ (caf, sobjectizer, rotor)
+status: published
+tags: c++, rotor
 ---
 
 [erlang-supervisor]: http://erlang.org/doc/design_principles/sup_princ.html
@@ -64,7 +66,7 @@ runtime does not creates an hierarchy, i.e. it is flat:
 
 ![caf.png](caf.png)
 
-There is actors groupping capabilities in [caf], which allows to multicast 
+There is actors groupping capabilities in [caf], which allows to multicast
 messages to all actors inside the group, e.g. shutdown messsage.
 
 ## sobjectizer
@@ -75,7 +77,7 @@ similar role to `system` in [caf]). `cooperations` can create child `cooperation
 thus making a hierarchy.
 
 However, it should be noted, that `cooperation` in [sobjectizer] *in not an actor*;
-it is the type provided by [sobjectizer] and there is no possibility to roll 
+it is the type provided by [sobjectizer] and there is no possibility to roll
 your own implementation.
 
 The `cooperation` in [sobjectizer] is some kind of supervisable group of actors,
@@ -94,11 +96,11 @@ or `deregistration`).
 
 Now follows my own vision how to get *fine-gained* supervising.
 
-Thus, there is no *direct* actor shutdown observation; only indirect (i.e. 
-via cooperation death notification). If there is need to observe individual 
-actor shutdown, it should be the only actor on a `cooperation`, and the 
-cooperation should be monitored; in the case of actor crash, it the new 
-cooperation should be spawned, and the new actor should be spawned on it, 
+Thus, there is no *direct* actor shutdown observation; only indirect (i.e.
+via cooperation death notification). If there is need to observe individual
+actor shutdown, it should be the only actor on a `cooperation`, and the
+cooperation should be monitored; in the case of actor crash, it the new
+cooperation should be spawned, and the new actor should be spawned on it,
 and the monitoring subscription routine above should be repeated.
 
 This can be visualized as the following:

@@ -1,27 +1,28 @@
 ---
-status: published
 title: Request Response Message Exchange Pattern
+status: published
+tags: c++, rotor
 ---
 
 # Introduction
 
 The plan is to examine request/response pattern in "abstract" actor framework,
-and find why it is not so trivial to implement as it might appear at the first. 
-Later, we'll see how various C++ actor frameworks (CAF, sobjectizer, rotor) 
+and find why it is not so trivial to implement as it might appear at the first.
+Later, we'll see how various C++ actor frameworks (CAF, sobjectizer, rotor)
 support the pattern.
 
-The Request Response Message Exchange Pattern sounds quite simple: a `client` 
-asks a `server` to proccess a `request` and return `response` to the client 
-once it is done. 
+The Request Response Message Exchange Pattern sounds quite simple: a `client`
+asks a `server` to proccess a `request` and return `response` to the client
+once it is done.
 
 # Synchronous analogy
 
-This is completely artificial analogy, however it seem useful for further 
+This is completely artificial analogy, however it seem useful for further
 explanations.
 
 It can be said, that in synchronous request-response can be simply presented as
 just a regular function call, where *request* is input parameter to a function,
-and the *response* is the return type, i.e. 
+and the *response* is the return type, i.e.
 
 
     struct request_t { ... };
@@ -29,24 +30,24 @@ and the *response* is the return type, i.e.
 
     response_t function(const request_t&) {  ... }
 
-The "server" here is the `function` inself, and the "client" is the call-side side. 
-    
+The "server" here is the `function` inself, and the "client" is the call-side side.
+
 The semantic of this function says that the function **always** successfully
 processes a request and return a result.
 
-Probably, the most modern way to express that a function might fail is to 
+Probably, the most modern way to express that a function might fail is to
 wrap the response into monad-like wrapper,
-like [std::optional](https://en.cppreference.com/w/cpp/utility/optional), 
-[std::expected](https://github.com/TartanLlama/expected), 
+like [std::optional](https://en.cppreference.com/w/cpp/utility/optional),
+[std::expected](https://github.com/TartanLlama/expected),
 [boost::outcome](https://www.boost.org/doc/libs/1_70_0/libs/outcome/doc/html/index.html)
-etc. 
+etc.
 
-Probably, the mostly used way to let the caller know that request processing 
+Probably, the mostly used way to let the caller know that request processing
 failed is to throw an *exception*. However, it is not expressible in the modern C++,
 so it should be mentioned somewhere in documentation or just assumed; in other
-words, from the function signature `response_t function(const request_t&)` never 
+words, from the function signature `response_t function(const request_t&)` never
 knows whether it always successfully processes request or sometimes it might
-fail and thrown an exception. 
+fail and thrown an exception.
 
 # Problems of naive approach in actor framework
 
@@ -55,70 +56,70 @@ framework: the `on_request` method of server-actor is called with the request
 payload, and it returns the `response_t`
 
     response_t server_t::on_request(request_t &)
-    
+
 The naive implementation of request-response approach follows the
-same pattern as in synchronous analogy, when it "forgets" to express that 
-the request processing might fail. The actor framework responsibility is 
-to wrap payload (`response_t`, `request_t`) into messages (`message<request_t>`) 
+same pattern as in synchronous analogy, when it "forgets" to express that
+the request processing might fail. The actor framework responsibility is
+to wrap payload (`response_t`, `request_t`) into messages (`message<request_t>`)
 and deliver them as *messages* to related actors (client-actor, server-actor).
 Later the payload will be unpacked.
-    
+
 The corresponding receiver interface of the client-actor will be like:
 
     void client_t::on_response(response_t&)
-    
-While it looks OK, how will the client-actor be able to distinguish responses
-from different requests? 
 
-The first solution would be to use some conventions on the request/response 
-protocol, i.e. inject some synthetic `request_id` into `request_t` and 
-somewhere into `response_t`, generate and set  it on request-side (client-actor) 
+While it looks OK, how will the client-actor be able to distinguish responses
+from different requests?
+
+The first solution would be to use some conventions on the request/response
+protocol, i.e. inject some synthetic `request_id` into `request_t` and
+somewhere into `response_t`, generate and set  it on request-side (client-actor)
 and presume that the server-actor will set it back together with the response.
-There is a variation of the solution, when the `request_t` is completely 
+There is a variation of the solution, when the `request_t` is completely
 embedded into `response_t`.
 
 While this will definitely work as it will be shown below with `sobjectizer`
 framework, this also means that **there is no help from a actor framework**
-and the burden of the implementation lies completely on a developer. 
+and the burden of the implementation lies completely on a developer.
 
 The second solution is to let it be managed somehow by an actor framework:
-let is suspend client-actor execution until the response will be received. 
+let is suspend client-actor execution until the response will be received.
 The "suspending" in the context means that all messages for the client-actor
-will be queued until the response will be received. 
+will be queued until the response will be received.
 
 This will work as soon as everything goes fine. However, as soon as something
 goes wrong (i.e. server-actor cannot process the request), the whole client-actor
 will stuck: It will not able to process *any* message, because it infinitely
 waits the particular one (the response).
 
-In terms of actor-design the client-actor becomes **non-reactive** at the moment 
-when it stops processing messages, which was a "feature" of the imaginary 
-naive actor framework to "wait" the `response`. 
+In terms of actor-design the client-actor becomes **non-reactive** at the moment
+when it stops processing messages, which was a "feature" of the imaginary
+naive actor framework to "wait" the `response`.
 
-You might guess, the per-request timeout timer, can resolve the problem. Yes, 
+You might guess, the per-request timeout timer, can resolve the problem. Yes,
 indeed, however how in the interface
 
     void client_t::on_response(response_t&)
-    
-it is possible to tell client-actor about timeout trigger? I don't see an 
-acceptable way to do that. It is paradoxical situation, that a failure
-can be detected, but there is no way to react on it. 
 
-Anyway, even if there would be a way to notify client-actor about failure, 
+it is possible to tell client-actor about timeout trigger? I don't see an
+acceptable way to do that. It is paradoxical situation, that a failure
+can be detected, but there is no way to react on it.
+
+Anyway, even if there would be a way to notify client-actor about failure,
 it still does not completely solves the non-reactivity problem: an actor
-becomes reactive only after timeout trigger, and until that it is still 
-"suspended" waiting `response_t` or timeout trigger. 
+becomes reactive only after timeout trigger, and until that it is still
+"suspended" waiting `response_t` or timeout trigger.
 
 The root of the problem caused by "forgetfulness" of the server-actor
-interface to specify, that it might fail. It's time to review our interfaces, 
+interface to specify, that it might fail. It's time to review our interfaces,
 then.
 
 # No framework support for req/res pattern
 
-Let's summarize the necessary pieces, which are required to implement 
-request/response pattern in actor-like manner. 
+Let's summarize the necessary pieces, which are required to implement
+request/response pattern in actor-like manner.
 
-First, the server-actor might fail in processing the request, and it 
+First, the server-actor might fail in processing the request, and it
 need to tell the framework and client-actor about the failure.
 
 Second, the response should enriched to contain the original `request_id`
@@ -126,10 +127,10 @@ to make it possible for client-actor to map the response to the request.
 (In other sources it might be named `correlation_id`, which serves the
 same purpose).
 
-Third, the original request from the client-actor should also contain 
+Third, the original request from the client-actor should also contain
 the `request_id`.
 
-Forth, as the original response payload might be missing at all, it 
+Forth, as the original response payload might be missing at all, it
 should be wrapped monad-like container (`std::optional`, `std::unique_ptr`
 etc.)
 
@@ -143,23 +144,23 @@ So, our basic structures should look like:
         request_id_t request_id;
         request_t req;
     };
-    
+
     enum class request_error_t { SUCCESS, TIMEOUT, FAIL_REASON_1_1, ... };
-    
+
     struct wrapped_response_t {
         request_error_t request_error;
         request_id_t request_id;
         std::optional<response_t> res;  /* may be it'll contain the payload */
     };
-    
+
 And the corresponding actor interfaces will be:
 
     wrapped_response_t server_t::on_request(wrapped_request_t& ) { ... }
-    
+
     void client_t::on_response(wrapped_response_t& ) { ... }
-    
-The `FAIL_REASON_1_1` and other error codes are desirable, if the server 
-wants **fail early** and notify client about that. Otherwise, if server cannot 
+
+The `FAIL_REASON_1_1` and other error codes are desirable, if the server
+wants **fail early** and notify client about that. Otherwise, if server cannot
 process request, it silently ignores the request; however client will be notified
 only via timeout and it can only guess, what exactly was wrong. In other words,
 it is not good practice in general *ignore* wrong requests; react on them is
@@ -177,27 +178,27 @@ So, sending an request from client to server should be like:
         auto request = request_t{ ... };
         framework.send(server_address, wrapped_request_t{ req_id, std::move(request) } );
     }
-    
-However, the story does not end here, as the timeout-timer part is missing (i.e. 
+
+However, the story does not end here, as the timeout-timer part is missing (i.e.
 for the case, when server-actor does not answer at all). The needed pieces are:
 1) per request timeout timer; 2) when the response arrives in time, the timer
 should be cancelled; 3) otherwise, the message with empty payload and timeout-fail
 reason should be delivered;  4) if the response still arrives after timeout trigger,
-it should be silently  discarded. There is a sense to have this things in dedicated methods. 
+it should be silently  discarded. There is a sense to have this things in dedicated methods.
 
     /* whatever that is able to identify particular timer instance */
-    using timer_id_t = ...; 
+    using timer_id_t = ...;
 
     struct client_t {
         using timer_map_t = std::unordered_map<timer_id_t, request_id_t>;
         /* reverse mapping */
-        using request_map_t = std::unordered_map<request_id_t, timer_id_t>; 
+        using request_map_t = std::unordered_map<request_id_t, timer_id_t>;
         ...
         request_id_t last_request_id = 1;
         timer_map_t timer_map;
         request_map_t request_map;
     };
-    
+
     void client_t::some_method() {
         auto req_id = ++last_request_id;
         auto request = request_t{ ... };
@@ -207,14 +208,14 @@ it should be silently  discarded. There is a sense to have this things in dedica
         timer_map.emplace(timer_id, req_id);
         request_map.emplace(req_id, timer_id);
     }
-    
+
     void client_t::on_timer_trigger(timer_id_t timer_id) {
         auto request_id = timer_map[timer_id];
         this->on_response(wrapped_response_t{ request_error_t::TIMEOUT,  request_id });
         timer_map.erase(timer_id);
         request_map.erase(request_id);
     }
-    
+
     void client_t::on_response_guard(wrapped_response_t& r) {
         if (request_map.count(r.request_id) == 0) {
             /* no timer, means timer already triggered and timeout-response was
@@ -227,15 +228,15 @@ it should be silently  discarded. There is a sense to have this things in dedica
         timer_map.erase(timer_id);
         request_map.erase(request_id);
     }
-    
+
 Now, the example is complete. It should be able to handle request-responses
 in a robust way. However, there is no actual request processing code, and
-a lot of auxiliary code to make it responsible and robust. 
+a lot of auxiliary code to make it responsible and robust.
 
-The worse thing, if that the boilerplate code have to be repeated for 
+The worse thing, if that the boilerplate code have to be repeated for
 every request-response pair type. It is discouraging and error-prone way
 of development; an developer might end up frustrated with actor-design
-at all. 
+at all.
 
 # req/res approach with sobjectizer
 
@@ -369,16 +370,16 @@ Other output sample:
     ponger::on_ping 1, 0.815891
     ponger::on_ping (sending pong back)
     pinger::on_pong 1, success: 1
-    
-It should be noted, that request/response pattern *was* supported in sobjectizer 
-[before](https://sourceforge.net/p/sobjectizer/wiki/so-5.5%20In-depth%20-%20Synchronous%20Interaction/) 
-version `5.6`, however it was dropped (well, moved to 
+
+It should be noted, that request/response pattern *was* supported in sobjectizer
+[before](https://sourceforge.net/p/sobjectizer/wiki/so-5.5%20In-depth%20-%20Synchronous%20Interaction/)
+version `5.6`, however it was dropped (well, moved to
 [sobjectizer-extra](https://sourceforge.net/p/sobjectizer/wiki/About%20so5extra/]), which has
 different licensing terms). The request/response was easy as the following like:
 
     auto r = so_5::request_value<Result,Request>(mbox, timeout, params);
 
-It is convenient; nevertheless, from the explanation sample "How does it work?", the following 
+It is convenient; nevertheless, from the explanation sample "How does it work?", the following
 sample is available:
 
     // Waiting and handling the result.
@@ -389,13 +390,13 @@ sample is available:
 
 it suffers the same **non-reactivity taint** as described above, i.e. lack of possibility to
 answer other messages, while waiting a response. Hence, you can see "Deadlocks" section
-in the documentation, and the developers responsibility to handle the situation. 
+in the documentation, and the developers responsibility to handle the situation.
 
 
 # req/res approach with CAF
 
 The [C++ actor framework](http://actor-framework.org/) (aka CAF), does support request/response
-approach. 
+approach.
 
     #include <chrono>
     #include <iostream>
@@ -451,25 +452,25 @@ approach.
     CAF_MAIN()
 
 Output sample:
-    
+
     ping
     pong, dice = 0.571207
     pong received
 
 Another output sample:
-    
+
     ping
     pong, dice = 0.270214
     pong was NOT received (timed out?), error code = 2
-    
+
 
 The call `client_actor->request(server_actor, timeout, args..)` returns an intermediate
-future-like object, where `then` method can be invoked with forwarded one-shot 
-actor behaviour. And, yes, there is `await` method too with non-reactive behaviour, 
-where you can shoot easily yourself with deadlock. So, according to the 
+future-like object, where `then` method can be invoked with forwarded one-shot
+actor behaviour. And, yes, there is `await` method too with non-reactive behaviour,
+where you can shoot easily yourself with deadlock. So, according to the
 [documentation](https://actor-framework.readthedocs.io/en/latest/MessagePassing.html#sending-requests-and-handling-responses)
-`then` method is what we need, as it "multiplexes the one-shot handler with the 
-regular actor behaviour and handles requests as they arrive". 
+`then` method is what we need, as it "multiplexes the one-shot handler with the
+regular actor behaviour and handles requests as they arrive".
 
 # req/res approach with rotor
 
@@ -567,7 +568,7 @@ approach since `v0.04`
         std::cout << "exiting...\n";
         return 0;
     }
-    
+
 Output sample:
 
     pong, dice = 0.90477
@@ -577,16 +578,16 @@ Another output sample:
 
     pong, dice = 0.24427
     pong was NOT received: request timeout
-    
-    
-Comparing to [CAF](http://actor-framework.org/), `rotor`'s version is more 
-verbose in the terms of LOC (lines of code). Partly this is caused by omitted 
+
+
+Comparing to [CAF](http://actor-framework.org/), `rotor`'s version is more
+verbose in the terms of LOC (lines of code). Partly this is caused by omitted
 `main` in `CAF`, while in `rotor` the main cannot be shortened because
 it is assumed to work with different loop backends as well as in cooperation
-with them and other non-actor loop components; partly because of in `CAF` 
+with them and other non-actor loop components; partly because of in `CAF`
 the message is hidden from user, while in `rotor` is is exposed outside
 due to performance reasons (i.e. allow the payload to be smart-pointer
-to have zero-copy); and finally because of `CAFs` intensive usage of 
+to have zero-copy); and finally because of `CAFs` intensive usage of
 lambdas, which leads to more compact code.
 
 However, it is still what it needed: reactive reactive request-response.
@@ -595,24 +596,24 @@ However, it is still what it needed: reactive reactive request-response.
 
 On the top of `request-response` pattern, the **ask pattern** can be developed.
 In short, an client-actor makes several of requests, and then, depending on the
-results it makes an appropriate action. See 
+results it makes an appropriate action. See
 [akka](https://doc.akka.io/docs/akka/current/actors.html#ask-send-and-receive-future)
-docs as an example, 
+docs as an example,
 
-However, the **ask pattern** it is a little bit more general: it should be 
+However, the **ask pattern** it is a little bit more general: it should be
 possible to access to the initial context (message) as well as to all responses
-(some of which might fail). 
+(some of which might fail).
 
 The `sobjectizer` does not offer support request-response patters, so it is out of
 comparison. The `sobjectizer-extra` offers `std::future` based solution,
 however, as we seen, it not reactive (`while(!fututure.is_ready()){ ... }`)
 and as the `std::futures` are not compose-able, the **ask pattern** cannot
-be implemented. 
+be implemented.
 
-As we've seen with `CAF` lambda approach, there are 2 lambdas *per request* 
-(one is for fail response and another is for success response); each one 
+As we've seen with `CAF` lambda approach, there are 2 lambdas *per request*
+(one is for fail response and another is for success response); each one
 captures outer request context and has access to its own response. Nonetheless,
-none of the lambdas has access to the contexts of the other requests; in 
+none of the lambdas has access to the contexts of the other requests; in
 other words the common context (which can include the original message)
 should be *shared* between them, and the code compactness seems to lost.
 
@@ -701,31 +702,31 @@ might fail.
     CAF_MAIN()
 
 Output sample:
-    
+
     ping
     pong, dice = 0.818207
     pong, dice = 0.140753
     success: 1, errors: 1
 
 Another output sample:
-    
+
     ping
     pong, dice = 0.832334
     pong, dice = 0.744168
     success: 2, errors: 0
 
-I'm not `CAF`s expert, but it seems that in shared context it needs to 
+I'm not `CAF`s expert, but it seems that in shared context it needs to
 be captured the original behaviour to access `aout`, and there is need
-to have two methods per each request type (or single composed one 
+to have two methods per each request type (or single composed one
 with takes composite monad-like result).
 
 Let's see how it works with `rotor`, however actors' addressing should be
-explained first. `Akka` and `CAF` actor frameworks use the `ActorRef` 
+explained first. `Akka` and `CAF` actor frameworks use the `ActorRef`
 notion to (globally) identify an actor. It seems that there is one-to-one
 matching between `ActorRef` and the actor. In `rotor` address is completely
-decoupled from actor, and it can process messages on any address it is 
+decoupled from actor, and it can process messages on any address it is
 subscribed to. There is "main" (or default) actors address which is used
-for main `rotor` mechanics, still it can be subscribed to any address 
+for main `rotor` mechanics, still it can be subscribed to any address
 and process messages on it.
 
 That technique is shown below, when an **ephemeral address** is created
@@ -846,19 +847,19 @@ Here is a full code:
     }
 
 Output sample:
-    
+
     pong, dice = 0.472509
     pong, dice = 0.305997
     success: 0, errors: 2
 
 Another output sample:
-    
+
     pong, dice = 0.103796
     pong, dice = 0.8862
     success: 1, errors: 1
 
-Rotor has special support of requests to be replied to custom addresses 
-(i.e. `request_via` method). The main difference with the `CAF` that instead 
+Rotor has special support of requests to be replied to custom addresses
+(i.e. `request_via` method). The main difference with the `CAF` that instead
 of multiple lambdas with additional methods (`record_success` and `record_fail`)
 and "gather-them-all" method (`output_results`), with `rotor` there is
 just single gather-them-all method (`on_pong`), which actually has exactly
@@ -866,28 +867,28 @@ the same signature when as the previous example with `rotor`.
 
 # Conclusion
 
-When you start thinking about possible failures the initially request 
+When you start thinking about possible failures the initially request
 response schema abruptly becomes non-trivial. Timeout and other errors
-should be handled and without framework support the code quite quickly 
+should be handled and without framework support the code quite quickly
 becomes cumbersome.
 
 There is still additional requirements, that the provided by a framework
-support of request/response pattern did not come of cost of loosing 
-actor's *reactivity*; for simplicity, you may treat it as 
+support of request/response pattern did not come of cost of loosing
+actor's *reactivity*; for simplicity, you may treat it as
 dead-lock avoidance. Another nice-to-have feature would be composability
-of the requests. 
+of the requests.
 
-At the moment `sobjectizer` does not provides request/response pattern, 
-however in the past it did, however it was *non-reactive*. 
+At the moment `sobjectizer` does not provides request/response pattern,
+however in the past it did, however it was *non-reactive*.
 
-Both `CAF` and `rotor` do provide request/response pattern keeping 
-still actors *reactive*. `CAF` has more compact code; the `rotor's` 
+Both `CAF` and `rotor` do provide request/response pattern keeping
+still actors *reactive*. `CAF` has more compact code; the `rotor's`
 code is more verbose. It seems that in `CAF` you should roll
-you own composability of requests, i.e. develop context class 
+you own composability of requests, i.e. develop context class
 and make it shared between different requests handlers. In `rotor`
 the composability of requests seems more natural via creating
-ephemeral reply addresses, which can associate the linked group 
-of requests in single place. 
+ephemeral reply addresses, which can associate the linked group
+of requests in single place.
 
 # Update
 
@@ -897,14 +898,15 @@ The `sobjectizer` author replied with separate
 
 So, it should be updated, that [sobjetizer-extra](https://github.com/Stiffstream/so5extra)
 provides support for request-response pattern, but only via a bit
-different name (`async_op`, in the case). It is completely 
+different name (`async_op`, in the case). It is completely
 asynchronous and free of dead-locks, i.e. **reactive**.
 
 It is also
 [composable](https://github.com/eao197/so5-request-reply-example/blob/master/dev/sample_composability_2/main.cpp),
-with the approximately same lines of code as `rotor` example. 
-The composability is done via lambdas (as in `CAF`), but 
+with the approximately same lines of code as `rotor` example.
+The composability is done via lambdas (as in `CAF`), but
 the responses are redirected to different `mboxes` (as the
 ephemeral addresses in `rotor`).
 
-So, it is possible to get the same result with all considered frameworks.
+So, it is possible to get the same result with all considered
+frameworks.
