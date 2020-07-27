@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta content="width=device-width, initial-scale=1" name="viewport">
+        <link href="/theme/css/normalize.css" rel="stylesheet">
+        <link href="/theme/css/skeleton.css" rel="stylesheet">
+        <link href="/theme/css/statocles-default.css" rel="stylesheet">
+        <link href="//maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css" rel="stylesheet">
+        <title>C++ permission model - Basiliscos's blog</title>
+        <meta content="Ivan Baidakou (aka basiliscos)" name="author">
+        <meta content="Statocles 0.097" name="generator">
+        
+    </head>
+    <body>
+        <header>
+            <nav class="navbar">
+                <div class="container">
+                    <a class="brand" href="/">Basiliscos&#39;s blog</a>
+                    <ul>
+                        <li>
+                            <a href="/">Blog</a>
+                        </li>
+                    </ul>
+                    
+                </div>
+            </nav>
+            
+        </header>
+        <div class="main container">
+            <div class="row">
+                <div class="nine columns">
+                    <main>
+                        <header>
+    <h1>C++ permission model</h1>
+
+    <aside>
+        <time datetime="2020-07-23">
+            Posted on 2020-07-23
+        </time>
+            <span class="author">
+                by Ivan Baidakou (aka basiliscos)
+            </span>
+    </aside>
+
+    <p class="tags">Tags:
+        <a href="/blog/tag/c/" rel="tag">c++</a>
+    </p>
+
+
+</header>
+<section id="section-1">
+    <h1>Abstract</h1>
+
+<p>The problems of <code>public</code>, <code>protected</code> and <code>private</code> access are considered.
+The generic templated <code>access</code> approach  with the on-demand specialization
+for a consumer is proposed; it&#39;s advantages and drawbacks are discussed.
+The synthetic solution satisfactory enough is proposed in the conclusion.</p>
+
+<h1>The problem</h1>
+
+<p>Out of the box C++ offers &quot;classical&quot; class access model: <code>public</code> properties
+(fields and methods) are accessible from anywhere, <code>protected</code> properties
+are accessible to descendant classes only, and finally <code>private</code> properties
+which permit access to class itself only.</p>
+
+<p>Additionally it is possible to declare <code>friend</code> class (which might be templated)
+to provide maximum access to all properties (i.e. the same as <code>private</code>). This
+allows to access to the internals of a class to a <strong>related</strong> class.</p>
+
+<p>For example, if there is an HTTP-library with <code>Request</code> and <code>Connection</code> classes
+and <code>Request</code> class would like to access <code>Connection</code> internals, this can be done
+as:</p>
+
+<pre><code>class Request;  /* forward declare */
+
+enum class Shutdown { read, write, both };
+class Connection {
+    public:
+        virtual void handle() { ... }
+    private:
+        void shutdown(Shutdown how) { ...;  }
+        int skt;
+        friend class Request;
+};
+
+class Request {
+    public:
+        virtual void process() {
+            ...;
+            /* I know what I&#39;m doing */
+            conn-&gt;shutdown(Shutdown::both);
+        }
+    protected:
+      Connection* conn;
+};
+</code></pre>
+
+<p>Now let&#39;s assume that there is an descendant</p>
+
+<pre><code>class HttpRequest: public Request {
+    public:
+        virtual void process() override {
+            conn-&gt;shutdown(Shutdown::both); // Oops!
+        }
+};
+</code></pre>
+
+<p>Alas, there is no way in C++ to access to <code>Connection::shutdown</code> from it.
+To overcome this, with the current access model, there are the possibilities.
+<em>First</em>, it is possible to declare <code>HttpRequest</code> as a friend in the <code>Connection</code>.
+Whilst this will certainly work, the solution has strict limitation, that it
+applicable only for single library (project) to code of which you have access.
+Otherwise, <em>it does not scales at all</em>.</p>
+
+<p>The <em>second</em> possibility if is to &quot;expose&quot; private connection from the <code>Request</code>
+class to all it&#39;s descendants, like:</p>
+
+<pre><code>class Request {
+    protected:
+        void connection_shutdown(Shutdown how) {  conn-&gt;shutdown(how); }
+        int&amp; connection_socket() {  conn-&gt;skt; }
+        const int&amp; connection_socket() const {  conn-&gt;skt; }
+        Connection* conn;
+};
+</code></pre>
+
+<p>This approach is better, because it scales to all descendant classes which can
+be located in different libraries. However, the price is quite high as there
+is need to provide access to all properties apriori even if some properties
+will not be needed. The more serious drawback is that the approach is limited
+to class inheritance; in other words, if there is need to access private
+properties of <code>Connection</code> not from <code>Request</code>&#39;s descendants, e.g. for tests.</p>
+
+<p>Somebody might become disappointed at all and try to make everything <strong>public by
+default</strong>. This scales well and covers all abovedescribed issues though brings
+a new ones: the boundary between stable <em>public</em> API interface and <em>private</em>
+implementation details of a class is blurred and completion suggestions in
+an IDE can be overloaded with too many variants. In other words the proposed
+approach is <em>too permissive</em>.</p>
+
+<p>Semantically identical would be to write simple <strong>accessors for all private
+properties</strong>; it just brings an <em>illusion</em> of the interface/implementation
+separation since a class author already exposed all class internals outside.</p>
+
+<p>Let&#39;s summarize the requirements for the private properties (aka implementation
+details):</p>
+
+<ul>
+<li><p>they should scale outside of a library</p></li>
+<li><p>they should be accessible outside of class hierarchy</p></li>
+<li><p>they should not &quot;pollute&quot; the class public API, i.e. somehow be not
+available by default, still be accessible</p></li>
+</ul>
+
+<h1>The possible solutions</h1>
+
+<p>It consists of two pieces, the first one is to declare possibility to access
+the private fields of a class, e.g.:</p>
+
+<pre><code>// my_library.h
+namespace my::library {
+    class Connection {
+        public:
+            virtual void handle() { ... }
+            template&lt;typename T...&gt; auto&amp; access() noexcept;
+        private:
+            void shutdown(Shutdown how) { ...;  }
+            int skt;
+    };
+}
+</code></pre>
+
+<p>The second piece is actually provide full access specialization in the
+target place, e.g. :</p>
+
+<pre><code>// my_app.cpp
+namespace to {
+    struct skt{}; // matches private field
+}
+
+namespace my::library {
+    auto&amp; Connection::access&lt;to::skt&gt;() noexcept { return skt; }
+}
+
+// namespace does not matter
+class HttpRequest: public Request {
+    public:
+        virtual void process() override {
+            auto&amp; s = conn-&gt;access&lt;to::skt&gt;();  // voila!
+            shutdown(s, SHUT_RDWR);
+        }
+};
+</code></pre>
+
+<p>In other words, in the source class the generic templated accessor
+is defined, and in the place, where the access is needed, the specialization
+is provided as the actual access to the required fields.</p>
+
+<p>The solution meets all requirements, however it still has it&#39;s own drawbacks.
+First, there is need of duplication of <code>const</code> and <code>non-const</code> access, i.e.</p>
+
+<pre><code>class Connection {
+    public:
+        virtual void handle() { ... }
+        template&lt;typename T...&gt; auto&amp; access() noexcept;
+        template&lt;typename T...&gt; auto&amp; access() const noexcept;
+};
+
+...
+
+namespace my::library {
+    auto&amp; Connection::access&lt;to::skt&gt;() noexcept       { return skt; }
+    auto&amp; Connection::access&lt;to::skt&gt;() const noexcept { return skt; }
+}
+</code></pre>
+
+<p>Although, you don&#39;t have to provide <code>const</code> and <code>non-const</code> access if you need
+only one.</p>
+
+<p>The second drawback, that to let the approach work <em>for methods</em>, especially
+those, which return type can&#39;t be <code>auto&amp;</code> (e.g. <code>void</code> or <code>int</code>). To overcome
+it the <code>access</code> should be rewritten as:</p>
+
+<pre><code>class Connection {
+    public:
+        template&lt;typename T, typename... Args&gt; T access(Args...);
+}
+
+namespace my::library {
+    void Connection::access&lt;void, Shutdown&gt;(Shutdown how) {
+        return shutdown(how);
+    }
+}
+
+class HttpRequest: public Request {
+    public:
+        virtual void process() override {
+            conn-&gt;access&lt;void, Shutdown&gt;(Shutdown::both);
+        }
+};
+</code></pre>
+
+<p>Another problem arises: if there are two or more private methods with identical
+signatures (return and arguments types), the artificial tag should be introduced
+again, i.e.</p>
+
+<pre><code>class Connection {
+    template&lt;typename T, typename Tag, typename... Args&gt; T access(Args...);
+};
+
+namespace to {
+    struct skt{};
+    struct shutdown{};
+}
+
+namespace my::library {
+    int&amp; Connection::access&lt;int&amp;, to::skt&gt;() { return skt; }
+    void Connection::access&lt;void, to::shutdown, Shutdown&gt;(Shutdown how) {
+        shutdown(how);
+    }
+}
+
+...
+conn-&gt;access&lt;void, to::shutdown&gt;(Shutdown::both); // voila!
+</code></pre>
+
+<p>The variadic <code>Args...</code> template parameter dos not force to duplicate the original
+arguments; it can have even add unrelated types to &quot;inject&quot; new methods with additional
+logic into the <code>Connection</code> class. For example:</p>
+
+<pre><code>namespace to {
+    struct fun{}
+}
+
+namespace my::library {
+    void Connection::access&lt;void, to::fun&gt;() {
+        Shutdown how = std::rand() &gt; 1000 ? Shutdown::read ? Shutdown::write;
+        shutdown(how);
+    }
+}
+</code></pre>
+
+<p>It is known, that methods might have optional <code>noexcept</code> specification in addition
+to <code>const</code>. So, for the sake of generality, all four access cases should be
+provided, i.e.:</p>
+
+<pre><code>class Connection {
+public:
+template&lt;typename T, typename Tag, typename... Args&gt; T access(Args...);
+template&lt;typename T, typename Tag, typename... Args&gt; T access(Args...) const;
+template&lt;typename T, typename Tag, typename... Args&gt; T access(Args...) noexcept;
+template&lt;typename T, typename Tag, typename... Args&gt; T access(Args...) const noexcept;
+};
+</code></pre>
+
+<p>Alas, it was not the last problem with the approach: there is a problem with inheritance,
+e.g.:</p>
+
+<pre><code>class Connection {
+    template&lt;typename T&gt; auto&amp; access();
+private:
+    int skt;
+};
+
+enum class SslState { /* whatever */};
+
+class SslConnection:public Connection {
+public:
+    template&lt;typename T&gt; auto&amp; access();
+private:
+    SslState state;
+};
+
+namespace to {
+    struct skt{};
+    struct state{};
+}
+
+namespace my::library {
+    auto&amp; Connection::access&lt;to::skt&gt;() { return skt; }
+    auto&amp; SslConnection::access&lt;to::state&gt;() { return state; }
+}
+</code></pre>
+
+<p>However, as soon as try to access to parent property via child class, i.e.:</p>
+
+<pre><code>SslConnection* conn = ...;
+auto&amp; skt = conn-&gt;access&lt;to::skt&gt;(); // oops!
+</code></pre>
+
+<p>It cannot resolve access to socket via <code>SslConnection</code> because there is no
+<code>to::skt</code> specialization for <code>SslConnection</code>; there is on in it&#39;s parent class,
+but in accordance with C++ rules a compiler does not see it. The solution
+is to cast to the base class:</p>
+
+<pre><code>SslConnection* conn = ...;
+auto&amp; skt = static_cast&lt;Connection*&gt;(conn)-&gt;access&lt;to::skt&gt;();
+</code></pre>
+
+<p>This becomes even more unhandy when an object is stored behind smart pointer.</p>
+
+<p>Let&#39;s enumerate key points:</p>
+
+<ul>
+<li><p>accessors multiplication due to <code>const</code> and <code>noexcept</code> variants</p></li>
+<li><p>not so handy access for private methods (too verbose due to multiple template
+params), although &quot;injection&quot; of own accessor-methods seems an advantage</p></li>
+<li><p>too clumpsy syntax to access private proreties in class hierarchy</p></li>
+</ul>
+
+<h1>Conclusion</h1>
+
+<p>The proposed solution is far from perfect. I found the following golden ratio
+for my projects on the implementation details access topic:</p>
+
+<ul>
+<li><p>if the property is stable enough or it is the part of class interface,
+then public accessor should be written for it. It would be desirable for
+read only access, i.e. the accessor should be just a getter. For example,
+the <code>address</code> property in <code>actor_base</code> in
+<a href="https://github.com/basiliscos/cpp-rotor/blob/master/include/rotor/actor_base.h">rotor</a>.</p></li>
+<li><p>otherwise, if implementation details might be usable in descendants,
+make them <code>private</code></p></li>
+<li><p>provide generic templated accessor (<code>template&lt;typename T&gt; auto&amp; access()</code>)
+but for properties only; no access to private methods, as I don&#39;t see possible
+use cases now. This point might be different for different projects.</p></li>
+</ul>
+
+<p>The described approach is applied in to be released soon
+<a href="https://github.com/basiliscos/cpp-rotor">rotor</a> <code>v0.09</code>.</p>
+
+</section>
+
+<ul class="pager">
+    <li class="prev">
+            <a class="button button-primary" href="/blog/2019/10/05/request-response-message-exchange-pattern/index.html" rel="prev">
+                ← Older
+            </a>
+    </li>
+    <li class="next">
+            <button disabled>
+                Newer →
+            </button>
+    </li>
+</ul>
+
+
+
+                    </main>
+                </div>
+
+                <div class="three columns sidebar">
+                    
+                        <nav id="tags">
+        <h1>Tags</h1>
+        <ul class="list-inline">
+            <li><a href="/blog/tag/c/">c++</a></li>
+            <li><a href="/blog/tag/rotor/">rotor</a></li>
+        </ul>
+    </nav>
+
+                    
+                </div>
+            </div>
+        </div>
+        <footer>
+            
+            <div class="container tagline">
+                <a href="http://preaction.me/statocles">Made with Statocles</a><br>
+                <a href="http://www.perl.org">Powered by Perl</a>
+            </div>
+        </footer>
+
+
+    </body>
+</html>

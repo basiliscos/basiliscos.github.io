@@ -1,17 +1,22 @@
 <?xml version="1.0"?>
-<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
-    <channel>
-        <title>Basiliscos&#39;s blog</title>
-        <link>http://basiliscos.github.io/blog/</link>
-        <atom:link href="http://basiliscos.github.io/blog/index.rss" rel="self" type="application/rss+xml" />
-        <description>Blog feed of Basiliscos&#39;s blog</description>
-        <generator>Statocles 0.097</generator>
-        <item>
-            <title>C++ permission model</title>
-            <link>http://basiliscos.github.io/blog/2020/07/23/permission-model/</link>
-            <guid>http://basiliscos.github.io/blog/2020/07/23/permission-model/</guid>
-            <description><![CDATA[
-                <h1>Abstract</h1>
+<feed xmlns="http://www.w3.org/2005/Atom">
+    <id>http://basiliscos.github.io/blog/tag/c/</id>
+    <title>Basiliscos&#39;s blog</title>
+    <updated>2020-07-23T00:00:00Z</updated>
+    <link href="http://basiliscos.github.io/blog/tag/c.atom" rel="self" />
+    <link href="http://basiliscos.github.io/blog/tag/c/" rel="alternate" />
+    <author>
+        <name>Ivan Baidakou (aka basiliscos)</name>
+    </author>
+    <generator version="0.097">Statocles</generator>
+
+    <entry>
+        <id>http://basiliscos.github.io/blog/2020/07/23/permission-model/</id>
+        <title>C++ permission model</title>
+        <author><name>Ivan Baidakou (aka basiliscos)</name></author>
+        <link href="http://basiliscos.github.io/blog/2020/07/23/permission-model/" rel="alternate" />
+        <content type="html"><![CDATA[
+            <h1>Abstract</h1>
 
 <p>The problems of <code>public</code>, <code>protected</code> and <code>private</code> access are considered.
 The generic templated <code>access</code> approach  with the on-demand specialization
@@ -332,21 +337,21 @@ use cases now. This point might be different for different projects.</p></li>
 <a href="https://github.com/basiliscos/cpp-rotor">rotor</a> <code>v0.09</code>.</p>
 
 
-                    <p>Tags:
-                        <a href="http://basiliscos.github.io/blog/tag/c/">c++</a>
-                    </p>
+                <p>Tags:
+                    <a href="http://basiliscos.github.io/blog/tag/c/">c++</a>
+                </p>
 
-            ]]></description>
-            <pubDate>
-                Thu, 23 Jul 2020 00:00:00 +0000
-            </pubDate>
-        </item>
-        <item>
-            <title>Request Response Message Exchange Pattern</title>
-            <link>http://basiliscos.github.io/blog/2019/10/05/request-response-message-exchange-pattern/</link>
-            <guid>http://basiliscos.github.io/blog/2019/10/05/request-response-message-exchange-pattern/</guid>
-            <description><![CDATA[
-                <h1>Introduction</h1>
+        ]]></content>
+        <updated>2020-07-23T00:00:00Z</updated>
+        <category term="c++" />
+    </entry>
+    <entry>
+        <id>http://basiliscos.github.io/blog/2019/10/05/request-response-message-exchange-pattern/</id>
+        <title>Request Response Message Exchange Pattern</title>
+        <author><name>Ivan Baidakou (aka basiliscos)</name></author>
+        <link href="http://basiliscos.github.io/blog/2019/10/05/request-response-message-exchange-pattern/" rel="alternate" />
+        <content type="html"><![CDATA[
+            <h1>Introduction</h1>
 
 <p>The plan is to examine request/response pattern in &quot;abstract&quot; actor framework,
 and find why it is not so trivial to implement as it might appear at the first.
@@ -1275,22 +1280,23 @@ ephemeral addresses in <code>rotor</code>).</p>
 frameworks.</p>
 
 
-                    <p>Tags:
-                        <a href="http://basiliscos.github.io/blog/tag/c/">c++</a>
-                        <a href="http://basiliscos.github.io/blog/tag/rotor/">rotor</a>
-                    </p>
+                <p>Tags:
+                    <a href="http://basiliscos.github.io/blog/tag/c/">c++</a>
+                    <a href="http://basiliscos.github.io/blog/tag/rotor/">rotor</a>
+                </p>
 
-            ]]></description>
-            <pubDate>
-                Sat, 05 Oct 2019 00:00:00 +0000
-            </pubDate>
-        </item>
-        <item>
-            <title>Trees of Supervisors in C++ (caf, sobjectizer, rotor)</title>
-            <link>http://basiliscos.github.io/blog/2019/08/19/cpp-supervisors/</link>
-            <guid>http://basiliscos.github.io/blog/2019/08/19/cpp-supervisors/</guid>
-            <description><![CDATA[
-                <h1>The notion of supervisor &amp; trees of supervisors</h1>
+        ]]></content>
+        <updated>2019-10-05T00:00:00Z</updated>
+        <category term="c++" />
+        <category term="rotor" />
+    </entry>
+    <entry>
+        <id>http://basiliscos.github.io/blog/2019/08/19/cpp-supervisors/</id>
+        <title>Trees of Supervisors in C++ (caf, sobjectizer, rotor)</title>
+        <author><name>Ivan Baidakou (aka basiliscos)</name></author>
+        <link href="http://basiliscos.github.io/blog/2019/08/19/cpp-supervisors/" rel="alternate" />
+        <content type="html"><![CDATA[
+            <h1>The notion of supervisor &amp; trees of supervisors</h1>
 
 <p>Erlang is famous for its <a href="http://erlang.org/doc/design_principles/sup_princ.html">erlang-supervisor</a> approach, i.e. an actor which is
 responsible managing it&#39;s child actors lifetime (start, restart, shutdown).</p>
@@ -1458,16 +1464,15 @@ with the same locality use root supervisor&#39;s messages queue.</p>
 <em>peers entry points</em>.</p>
 
 
-                    <p>Tags:
-                        <a href="http://basiliscos.github.io/blog/tag/c/">c++</a>
-                        <a href="http://basiliscos.github.io/blog/tag/rotor/">rotor</a>
-                    </p>
+                <p>Tags:
+                    <a href="http://basiliscos.github.io/blog/tag/c/">c++</a>
+                    <a href="http://basiliscos.github.io/blog/tag/rotor/">rotor</a>
+                </p>
 
-            ]]></description>
-            <pubDate>
-                Mon, 19 Aug 2019 00:00:00 +0000
-            </pubDate>
-        </item>
-    </channel>
-</rss>
+        ]]></content>
+        <updated>2019-08-19T00:00:00Z</updated>
+        <category term="c++" />
+        <category term="rotor" />
+    </entry>
+</feed>
 

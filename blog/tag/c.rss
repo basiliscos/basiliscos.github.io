@@ -2,8 +2,8 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
     <channel>
         <title>Basiliscos&#39;s blog</title>
-        <link>http://basiliscos.github.io/blog/</link>
-        <atom:link href="http://basiliscos.github.io/blog/index.rss" rel="self" type="application/rss+xml" />
+        <link>http://basiliscos.github.io/blog/tag/c/</link>
+        <atom:link href="http://basiliscos.github.io/blog/tag/c.rss" rel="self" type="application/rss+xml" />
         <description>Blog feed of Basiliscos&#39;s blog</description>
         <generator>Statocles 0.097</generator>
         <item>

@@ -9,7 +9,7 @@
         <link href="//maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css" rel="stylesheet">
         <title>Trees of Supervisors in C++ (caf, sobjectizer, rotor) - Basiliscos's blog</title>
         <meta content="Ivan Baidakou (aka basiliscos)" name="author">
-        <meta content="Statocles 0.095" name="generator">
+        <meta content="Statocles 0.097" name="generator">
         
     </head>
     <body>
@@ -44,6 +44,8 @@
     </aside>
 
     <p class="tags">Tags:
+        <a href="/blog/tag/c/" rel="tag">c++</a>
+        <a href="/blog/tag/rotor/" rel="tag">rotor</a>
     </p>
 
 
@@ -101,7 +103,7 @@ runtime does not creates an hierarchy, i.e. it is flat:</p>
 
 <p><img alt="caf.png" src="caf.png"></p>
 
-<p>There is actors groupping capabilities in <a href="https://actor-framework.org/">caf</a>, which allows to multicast 
+<p>There is actors groupping capabilities in <a href="https://actor-framework.org/">caf</a>, which allows to multicast
 messages to all actors inside the group, e.g. shutdown messsage.</p>
 
 <h2>sobjectizer</h2>
@@ -112,7 +114,7 @@ similar role to <code>system</code> in <a href="https://actor-framework.org/">ca
 thus making a hierarchy.</p>
 
 <p>However, it should be noted, that <code>cooperation</code> in <a href="https://github.com/Stiffstream/sobjectizer">sobjectizer</a> <em>in not an actor</em>;
-it is the type provided by <a href="https://github.com/Stiffstream/sobjectizer">sobjectizer</a> and there is no possibility to roll 
+it is the type provided by <a href="https://github.com/Stiffstream/sobjectizer">sobjectizer</a> and there is no possibility to roll
 your own implementation.</p>
 
 <p>The <code>cooperation</code> in <a href="https://github.com/Stiffstream/sobjectizer">sobjectizer</a> is some kind of supervisable group of actors,
@@ -131,11 +133,11 @@ or <code>deregistration</code>).</p>
 
 <p>Now follows my own vision how to get <em>fine-gained</em> supervising.</p>
 
-<p>Thus, there is no <em>direct</em> actor shutdown observation; only indirect (i.e. 
-via cooperation death notification). If there is need to observe individual 
-actor shutdown, it should be the only actor on a <code>cooperation</code>, and the 
-cooperation should be monitored; in the case of actor crash, it the new 
-cooperation should be spawned, and the new actor should be spawned on it, 
+<p>Thus, there is no <em>direct</em> actor shutdown observation; only indirect (i.e.
+via cooperation death notification). If there is need to observe individual
+actor shutdown, it should be the only actor on a <code>cooperation</code>, and the
+cooperation should be monitored; in the case of actor crash, it the new
+cooperation should be spawned, and the new actor should be spawned on it,
 and the monitoring subscription routine above should be repeated.</p>
 
 <p>This can be visualized as the following:</p>
@@ -241,6 +243,8 @@ with the same locality use root supervisor&#39;s messages queue.</p>
                         <nav id="tags">
         <h1>Tags</h1>
         <ul class="list-inline">
+            <li><a href="/blog/tag/c/">c++</a></li>
+            <li><a href="/blog/tag/rotor/">rotor</a></li>
         </ul>
     </nav>
 

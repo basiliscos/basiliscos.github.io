@@ -2,14 +2,349 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>http://basiliscos.github.io/blog/</id>
     <title>Basiliscos&#39;s blog</title>
-    <updated>2019-10-05T00:00:00Z</updated>
+    <updated>2020-07-23T00:00:00Z</updated>
     <link href="http://basiliscos.github.io/blog/index.atom" rel="self" />
     <link href="http://basiliscos.github.io/blog/" rel="alternate" />
     <author>
         <name>Ivan Baidakou (aka basiliscos)</name>
     </author>
-    <generator version="0.095">Statocles</generator>
+    <generator version="0.097">Statocles</generator>
 
+    <entry>
+        <id>http://basiliscos.github.io/blog/2020/07/23/permission-model/</id>
+        <title>C++ permission model</title>
+        <author><name>Ivan Baidakou (aka basiliscos)</name></author>
+        <link href="http://basiliscos.github.io/blog/2020/07/23/permission-model/" rel="alternate" />
+        <content type="html"><![CDATA[
+            <h1>Abstract</h1>
+
+<p>The problems of <code>public</code>, <code>protected</code> and <code>private</code> access are considered.
+The generic templated <code>access</code> approach  with the on-demand specialization
+for a consumer is proposed; it&#39;s advantages and drawbacks are discussed.
+The synthetic solution satisfactory enough is proposed in the conclusion.</p>
+
+<h1>The problem</h1>
+
+<p>Out of the box C++ offers &quot;classical&quot; class access model: <code>public</code> properties
+(fields and methods) are accessible from anywhere, <code>protected</code> properties
+are accessible to descendant classes only, and finally <code>private</code> properties
+which permit access to class itself only.</p>
+
+<p>Additionally it is possible to declare <code>friend</code> class (which might be templated)
+to provide maximum access to all properties (i.e. the same as <code>private</code>). This
+allows to access to the internals of a class to a <strong>related</strong> class.</p>
+
+<p>For example, if there is an HTTP-library with <code>Request</code> and <code>Connection</code> classes
+and <code>Request</code> class would like to access <code>Connection</code> internals, this can be done
+as:</p>
+
+<pre><code>class Request;  /* forward declare */
+
+enum class Shutdown { read, write, both };
+class Connection {
+    public:
+        virtual void handle() { ... }
+    private:
+        void shutdown(Shutdown how) { ...;  }
+        int skt;
+        friend class Request;
+};
+
+class Request {
+    public:
+        virtual void process() {
+            ...;
+            /* I know what I&#39;m doing */
+            conn-&gt;shutdown(Shutdown::both);
+        }
+    protected:
+      Connection* conn;
+};
+</code></pre>
+
+<p>Now let&#39;s assume that there is an descendant</p>
+
+<pre><code>class HttpRequest: public Request {
+    public:
+        virtual void process() override {
+            conn-&gt;shutdown(Shutdown::both); // Oops!
+        }
+};
+</code></pre>
+
+<p>Alas, there is no way in C++ to access to <code>Connection::shutdown</code> from it.
+To overcome this, with the current access model, there are the possibilities.
+<em>First</em>, it is possible to declare <code>HttpRequest</code> as a friend in the <code>Connection</code>.
+Whilst this will certainly work, the solution has strict limitation, that it
+applicable only for single library (project) to code of which you have access.
+Otherwise, <em>it does not scales at all</em>.</p>
+
+<p>The <em>second</em> possibility if is to &quot;expose&quot; private connection from the <code>Request</code>
+class to all it&#39;s descendants, like:</p>
+
+<pre><code>class Request {
+    protected:
+        void connection_shutdown(Shutdown how) {  conn-&gt;shutdown(how); }
+        int&amp; connection_socket() {  conn-&gt;skt; }
+        const int&amp; connection_socket() const {  conn-&gt;skt; }
+        Connection* conn;
+};
+</code></pre>
+
+<p>This approach is better, because it scales to all descendant classes which can
+be located in different libraries. However, the price is quite high as there
+is need to provide access to all properties apriori even if some properties
+will not be needed. The more serious drawback is that the approach is limited
+to class inheritance; in other words, if there is need to access private
+properties of <code>Connection</code> not from <code>Request</code>&#39;s descendants, e.g. for tests.</p>
+
+<p>Somebody might become disappointed at all and try to make everything <strong>public by
+default</strong>. This scales well and covers all abovedescribed issues though brings
+a new ones: the boundary between stable <em>public</em> API interface and <em>private</em>
+implementation details of a class is blurred and completion suggestions in
+an IDE can be overloaded with too many variants. In other words the proposed
+approach is <em>too permissive</em>.</p>
+
+<p>Semantically identical would be to write simple <strong>accessors for all private
+properties</strong>; it just brings an <em>illusion</em> of the interface/implementation
+separation since a class author already exposed all class internals outside.</p>
+
+<p>Let&#39;s summarize the requirements for the private properties (aka implementation
+details):</p>
+
+<ul>
+<li><p>they should scale outside of a library</p></li>
+<li><p>they should be accessible outside of class hierarchy</p></li>
+<li><p>they should not &quot;pollute&quot; the class public API, i.e. somehow be not
+available by default, still be accessible</p></li>
+</ul>
+
+<h1>The possible solutions</h1>
+
+<p>It consists of two pieces, the first one is to declare possibility to access
+the private fields of a class, e.g.:</p>
+
+<pre><code>// my_library.h
+namespace my::library {
+    class Connection {
+        public:
+            virtual void handle() { ... }
+            template&lt;typename T...&gt; auto&amp; access() noexcept;
+        private:
+            void shutdown(Shutdown how) { ...;  }
+            int skt;
+    };
+}
+</code></pre>
+
+<p>The second piece is actually provide full access specialization in the
+target place, e.g. :</p>
+
+<pre><code>// my_app.cpp
+namespace to {
+    struct skt{}; // matches private field
+}
+
+namespace my::library {
+    auto&amp; Connection::access&lt;to::skt&gt;() noexcept { return skt; }
+}
+
+// namespace does not matter
+class HttpRequest: public Request {
+    public:
+        virtual void process() override {
+            auto&amp; s = conn-&gt;access&lt;to::skt&gt;();  // voila!
+            shutdown(s, SHUT_RDWR);
+        }
+};
+</code></pre>
+
+<p>In other words, in the source class the generic templated accessor
+is defined, and in the place, where the access is needed, the specialization
+is provided as the actual access to the required fields.</p>
+
+<p>The solution meets all requirements, however it still has it&#39;s own drawbacks.
+First, there is need of duplication of <code>const</code> and <code>non-const</code> access, i.e.</p>
+
+<pre><code>class Connection {
+    public:
+        virtual void handle() { ... }
+        template&lt;typename T...&gt; auto&amp; access() noexcept;
+        template&lt;typename T...&gt; auto&amp; access() const noexcept;
+};
+
+...
+
+namespace my::library {
+    auto&amp; Connection::access&lt;to::skt&gt;() noexcept       { return skt; }
+    auto&amp; Connection::access&lt;to::skt&gt;() const noexcept { return skt; }
+}
+</code></pre>
+
+<p>Although, you don&#39;t have to provide <code>const</code> and <code>non-const</code> access if you need
+only one.</p>
+
+<p>The second drawback, that to let the approach work <em>for methods</em>, especially
+those, which return type can&#39;t be <code>auto&amp;</code> (e.g. <code>void</code> or <code>int</code>). To overcome
+it the <code>access</code> should be rewritten as:</p>
+
+<pre><code>class Connection {
+    public:
+        template&lt;typename T, typename... Args&gt; T access(Args...);
+}
+
+namespace my::library {
+    void Connection::access&lt;void, Shutdown&gt;(Shutdown how) {
+        return shutdown(how);
+    }
+}
+
+class HttpRequest: public Request {
+    public:
+        virtual void process() override {
+            conn-&gt;access&lt;void, Shutdown&gt;(Shutdown::both);
+        }
+};
+</code></pre>
+
+<p>Another problem arises: if there are two or more private methods with identical
+signatures (return and arguments types), the artificial tag should be introduced
+again, i.e.</p>
+
+<pre><code>class Connection {
+    template&lt;typename T, typename Tag, typename... Args&gt; T access(Args...);
+};
+
+namespace to {
+    struct skt{};
+    struct shutdown{};
+}
+
+namespace my::library {
+    int&amp; Connection::access&lt;int&amp;, to::skt&gt;() { return skt; }
+    void Connection::access&lt;void, to::shutdown, Shutdown&gt;(Shutdown how) {
+        shutdown(how);
+    }
+}
+
+...
+conn-&gt;access&lt;void, to::shutdown&gt;(Shutdown::both); // voila!
+</code></pre>
+
+<p>The variadic <code>Args...</code> template parameter dos not force to duplicate the original
+arguments; it can have even add unrelated types to &quot;inject&quot; new methods with additional
+logic into the <code>Connection</code> class. For example:</p>
+
+<pre><code>namespace to {
+    struct fun{}
+}
+
+namespace my::library {
+    void Connection::access&lt;void, to::fun&gt;() {
+        Shutdown how = std::rand() &gt; 1000 ? Shutdown::read ? Shutdown::write;
+        shutdown(how);
+    }
+}
+</code></pre>
+
+<p>It is known, that methods might have optional <code>noexcept</code> specification in addition
+to <code>const</code>. So, for the sake of generality, all four access cases should be
+provided, i.e.:</p>
+
+<pre><code>class Connection {
+public:
+template&lt;typename T, typename Tag, typename... Args&gt; T access(Args...);
+template&lt;typename T, typename Tag, typename... Args&gt; T access(Args...) const;
+template&lt;typename T, typename Tag, typename... Args&gt; T access(Args...) noexcept;
+template&lt;typename T, typename Tag, typename... Args&gt; T access(Args...) const noexcept;
+};
+</code></pre>
+
+<p>Alas, it was not the last problem with the approach: there is a problem with inheritance,
+e.g.:</p>
+
+<pre><code>class Connection {
+    template&lt;typename T&gt; auto&amp; access();
+private:
+    int skt;
+};
+
+enum class SslState { /* whatever */};
+
+class SslConnection:public Connection {
+public:
+    template&lt;typename T&gt; auto&amp; access();
+private:
+    SslState state;
+};
+
+namespace to {
+    struct skt{};
+    struct state{};
+}
+
+namespace my::library {
+    auto&amp; Connection::access&lt;to::skt&gt;() { return skt; }
+    auto&amp; SslConnection::access&lt;to::state&gt;() { return state; }
+}
+</code></pre>
+
+<p>However, as soon as try to access to parent property via child class, i.e.:</p>
+
+<pre><code>SslConnection* conn = ...;
+auto&amp; skt = conn-&gt;access&lt;to::skt&gt;(); // oops!
+</code></pre>
+
+<p>It cannot resolve access to socket via <code>SslConnection</code> because there is no
+<code>to::skt</code> specialization for <code>SslConnection</code>; there is on in it&#39;s parent class,
+but in accordance with C++ rules a compiler does not see it. The solution
+is to cast to the base class:</p>
+
+<pre><code>SslConnection* conn = ...;
+auto&amp; skt = static_cast&lt;Connection*&gt;(conn)-&gt;access&lt;to::skt&gt;();
+</code></pre>
+
+<p>This becomes even more unhandy when an object is stored behind smart pointer.</p>
+
+<p>Let&#39;s enumerate key points:</p>
+
+<ul>
+<li><p>accessors multiplication due to <code>const</code> and <code>noexcept</code> variants</p></li>
+<li><p>not so handy access for private methods (too verbose due to multiple template
+params), although &quot;injection&quot; of own accessor-methods seems an advantage</p></li>
+<li><p>too clumpsy syntax to access private proreties in class hierarchy</p></li>
+</ul>
+
+<h1>Conclusion</h1>
+
+<p>The proposed solution is far from perfect. I found the following golden ratio
+for my projects on the implementation details access topic:</p>
+
+<ul>
+<li><p>if the property is stable enough or it is the part of class interface,
+then public accessor should be written for it. It would be desirable for
+read only access, i.e. the accessor should be just a getter. For example,
+the <code>address</code> property in <code>actor_base</code> in
+<a href="https://github.com/basiliscos/cpp-rotor/blob/master/include/rotor/actor_base.h">rotor</a>.</p></li>
+<li><p>otherwise, if implementation details might be usable in descendants,
+make them <code>private</code></p></li>
+<li><p>provide generic templated accessor (<code>template&lt;typename T&gt; auto&amp; access()</code>)
+but for properties only; no access to private methods, as I don&#39;t see possible
+use cases now. This point might be different for different projects.</p></li>
+</ul>
+
+<p>The described approach is applied in to be released soon
+<a href="https://github.com/basiliscos/cpp-rotor">rotor</a> <code>v0.09</code>.</p>
+
+
+                <p>Tags:
+                    <a href="http://basiliscos.github.io/blog/tag/c/">c++</a>
+                </p>
+
+        ]]></content>
+        <updated>2020-07-23T00:00:00Z</updated>
+        <category term="c++" />
+    </entry>
     <entry>
         <id>http://basiliscos.github.io/blog/2019/10/05/request-response-message-exchange-pattern/</id>
         <title>Request Response Message Exchange Pattern</title>
@@ -19,22 +354,22 @@
             <h1>Introduction</h1>
 
 <p>The plan is to examine request/response pattern in &quot;abstract&quot; actor framework,
-and find why it is not so trivial to implement as it might appear at the first. 
-Later, we&#39;ll see how various C++ actor frameworks (CAF, sobjectizer, rotor) 
+and find why it is not so trivial to implement as it might appear at the first.
+Later, we&#39;ll see how various C++ actor frameworks (CAF, sobjectizer, rotor)
 support the pattern.</p>
 
-<p>The Request Response Message Exchange Pattern sounds quite simple: a <code>client</code> 
-asks a <code>server</code> to proccess a <code>request</code> and return <code>response</code> to the client 
-once it is done. </p>
+<p>The Request Response Message Exchange Pattern sounds quite simple: a <code>client</code>
+asks a <code>server</code> to proccess a <code>request</code> and return <code>response</code> to the client
+once it is done.</p>
 
 <h1>Synchronous analogy</h1>
 
-<p>This is completely artificial analogy, however it seem useful for further 
+<p>This is completely artificial analogy, however it seem useful for further
 explanations.</p>
 
 <p>It can be said, that in synchronous request-response can be simply presented as
 just a regular function call, where <em>request</em> is input parameter to a function,
-and the <em>response</em> is the return type, i.e. </p>
+and the <em>response</em> is the return type, i.e.</p>
 
 <pre><code>struct request_t { ... };
 struct response_t { ... };
@@ -42,24 +377,24 @@ struct response_t { ... };
 response_t function(const request_t&amp;) {  ... }
 </code></pre>
 
-<p>The &quot;server&quot; here is the <code>function</code> inself, and the &quot;client&quot; is the call-side side. </p>
+<p>The &quot;server&quot; here is the <code>function</code> inself, and the &quot;client&quot; is the call-side side.</p>
 
 <p>The semantic of this function says that the function <strong>always</strong> successfully
 processes a request and return a result.</p>
 
-<p>Probably, the most modern way to express that a function might fail is to 
+<p>Probably, the most modern way to express that a function might fail is to
 wrap the response into monad-like wrapper,
-like <a href="https://en.cppreference.com/w/cpp/utility/optional">std::optional</a>, 
-<a href="https://github.com/TartanLlama/expected">std::expected</a>, 
+like <a href="https://en.cppreference.com/w/cpp/utility/optional">std::optional</a>,
+<a href="https://github.com/TartanLlama/expected">std::expected</a>,
 <a href="https://www.boost.org/doc/libs/1_70_0/libs/outcome/doc/html/index.html">boost::outcome</a>
-etc. </p>
+etc.</p>
 
-<p>Probably, the mostly used way to let the caller know that request processing 
+<p>Probably, the mostly used way to let the caller know that request processing
 failed is to throw an <em>exception</em>. However, it is not expressible in the modern C++,
 so it should be mentioned somewhere in documentation or just assumed; in other
-words, from the function signature <code>response_t function(const request_t&amp;)</code> never 
+words, from the function signature <code>response_t function(const request_t&amp;)</code> never
 knows whether it always successfully processes request or sometimes it might
-fail and thrown an exception. </p>
+fail and thrown an exception.</p>
 
 <h1>Problems of naive approach in actor framework</h1>
 
@@ -71,9 +406,9 @@ payload, and it returns the <code>response_t</code></p>
 </code></pre>
 
 <p>The naive implementation of request-response approach follows the
-same pattern as in synchronous analogy, when it &quot;forgets&quot; to express that 
-the request processing might fail. The actor framework responsibility is 
-to wrap payload (<code>response_t</code>, <code>request_t</code>) into messages (<code>message&lt;request_t&gt;</code>) 
+same pattern as in synchronous analogy, when it &quot;forgets&quot; to express that
+the request processing might fail. The actor framework responsibility is
+to wrap payload (<code>response_t</code>, <code>request_t</code>) into messages (<code>message&lt;request_t&gt;</code>)
 and deliver them as <em>messages</em> to related actors (client-actor, server-actor).
 Later the payload will be unpacked.</p>
 
@@ -83,58 +418,58 @@ Later the payload will be unpacked.</p>
 </code></pre>
 
 <p>While it looks OK, how will the client-actor be able to distinguish responses
-from different requests? </p>
+from different requests?</p>
 
-<p>The first solution would be to use some conventions on the request/response 
-protocol, i.e. inject some synthetic <code>request_id</code> into <code>request_t</code> and 
-somewhere into <code>response_t</code>, generate and set  it on request-side (client-actor) 
+<p>The first solution would be to use some conventions on the request/response
+protocol, i.e. inject some synthetic <code>request_id</code> into <code>request_t</code> and
+somewhere into <code>response_t</code>, generate and set  it on request-side (client-actor)
 and presume that the server-actor will set it back together with the response.
-There is a variation of the solution, when the <code>request_t</code> is completely 
+There is a variation of the solution, when the <code>request_t</code> is completely
 embedded into <code>response_t</code>.</p>
 
 <p>While this will definitely work as it will be shown below with <code>sobjectizer</code>
 framework, this also means that <strong>there is no help from a actor framework</strong>
-and the burden of the implementation lies completely on a developer. </p>
+and the burden of the implementation lies completely on a developer.</p>
 
 <p>The second solution is to let it be managed somehow by an actor framework:
-let is suspend client-actor execution until the response will be received. 
+let is suspend client-actor execution until the response will be received.
 The &quot;suspending&quot; in the context means that all messages for the client-actor
-will be queued until the response will be received. </p>
+will be queued until the response will be received.</p>
 
 <p>This will work as soon as everything goes fine. However, as soon as something
 goes wrong (i.e. server-actor cannot process the request), the whole client-actor
 will stuck: It will not able to process <em>any</em> message, because it infinitely
 waits the particular one (the response).</p>
 
-<p>In terms of actor-design the client-actor becomes <strong>non-reactive</strong> at the moment 
-when it stops processing messages, which was a &quot;feature&quot; of the imaginary 
-naive actor framework to &quot;wait&quot; the <code>response</code>. </p>
+<p>In terms of actor-design the client-actor becomes <strong>non-reactive</strong> at the moment
+when it stops processing messages, which was a &quot;feature&quot; of the imaginary
+naive actor framework to &quot;wait&quot; the <code>response</code>.</p>
 
-<p>You might guess, the per-request timeout timer, can resolve the problem. Yes, 
+<p>You might guess, the per-request timeout timer, can resolve the problem. Yes,
 indeed, however how in the interface</p>
 
 <pre><code>void client_t::on_response(response_t&amp;)
 </code></pre>
 
-<p>it is possible to tell client-actor about timeout trigger? I don&#39;t see an 
+<p>it is possible to tell client-actor about timeout trigger? I don&#39;t see an
 acceptable way to do that. It is paradoxical situation, that a failure
-can be detected, but there is no way to react on it. </p>
+can be detected, but there is no way to react on it.</p>
 
-<p>Anyway, even if there would be a way to notify client-actor about failure, 
+<p>Anyway, even if there would be a way to notify client-actor about failure,
 it still does not completely solves the non-reactivity problem: an actor
-becomes reactive only after timeout trigger, and until that it is still 
-&quot;suspended&quot; waiting <code>response_t</code> or timeout trigger. </p>
+becomes reactive only after timeout trigger, and until that it is still
+&quot;suspended&quot; waiting <code>response_t</code> or timeout trigger.</p>
 
 <p>The root of the problem caused by &quot;forgetfulness&quot; of the server-actor
-interface to specify, that it might fail. It&#39;s time to review our interfaces, 
+interface to specify, that it might fail. It&#39;s time to review our interfaces,
 then.</p>
 
 <h1>No framework support for req/res pattern</h1>
 
-<p>Let&#39;s summarize the necessary pieces, which are required to implement 
-request/response pattern in actor-like manner. </p>
+<p>Let&#39;s summarize the necessary pieces, which are required to implement
+request/response pattern in actor-like manner.</p>
 
-<p>First, the server-actor might fail in processing the request, and it 
+<p>First, the server-actor might fail in processing the request, and it
 need to tell the framework and client-actor about the failure.</p>
 
 <p>Second, the response should enriched to contain the original <code>request_id</code>
@@ -142,10 +477,10 @@ to make it possible for client-actor to map the response to the request.
 (In other sources it might be named <code>correlation_id</code>, which serves the
 same purpose).</p>
 
-<p>Third, the original request from the client-actor should also contain 
+<p>Third, the original request from the client-actor should also contain
 the <code>request_id</code>.</p>
 
-<p>Forth, as the original response payload might be missing at all, it 
+<p>Forth, as the original response payload might be missing at all, it
 should be wrapped monad-like container (<code>std::optional</code>, <code>std::unique_ptr</code>
 etc.)</p>
 
@@ -176,8 +511,8 @@ struct wrapped_response_t {
 void client_t::on_response(wrapped_response_t&amp; ) { ... }
 </code></pre>
 
-<p>The <code>FAIL_REASON_1_1</code> and other error codes are desirable, if the server 
-wants <strong>fail early</strong> and notify client about that. Otherwise, if server cannot 
+<p>The <code>FAIL_REASON_1_1</code> and other error codes are desirable, if the server
+wants <strong>fail early</strong> and notify client about that. Otherwise, if server cannot
 process request, it silently ignores the request; however client will be notified
 only via timeout and it can only guess, what exactly was wrong. In other words,
 it is not good practice in general <em>ignore</em> wrong requests; react on them is
@@ -197,20 +532,20 @@ void client_t::some_method() {
 }
 </code></pre>
 
-<p>However, the story does not end here, as the timeout-timer part is missing (i.e. 
+<p>However, the story does not end here, as the timeout-timer part is missing (i.e.
 for the case, when server-actor does not answer at all). The needed pieces are:
 1) per request timeout timer; 2) when the response arrives in time, the timer
 should be cancelled; 3) otherwise, the message with empty payload and timeout-fail
 reason should be delivered;  4) if the response still arrives after timeout trigger,
-it should be silently  discarded. There is a sense to have this things in dedicated methods. </p>
+it should be silently  discarded. There is a sense to have this things in dedicated methods.</p>
 
 <pre><code>/* whatever that is able to identify particular timer instance */
-using timer_id_t = ...; 
+using timer_id_t = ...;
 
 struct client_t {
     using timer_map_t = std::unordered_map&lt;timer_id_t, request_id_t&gt;;
     /* reverse mapping */
-    using request_map_t = std::unordered_map&lt;request_id_t, timer_id_t&gt;; 
+    using request_map_t = std::unordered_map&lt;request_id_t, timer_id_t&gt;;
     ...
     request_id_t last_request_id = 1;
     timer_map_t timer_map;
@@ -250,12 +585,12 @@ void client_t::on_response_guard(wrapped_response_t&amp; r) {
 
 <p>Now, the example is complete. It should be able to handle request-responses
 in a robust way. However, there is no actual request processing code, and
-a lot of auxiliary code to make it responsible and robust. </p>
+a lot of auxiliary code to make it responsible and robust.</p>
 
-<p>The worse thing, if that the boilerplate code have to be repeated for 
+<p>The worse thing, if that the boilerplate code have to be repeated for
 every request-response pair type. It is discouraging and error-prone way
 of development; an developer might end up frustrated with actor-design
-at all. </p>
+at all.</p>
 
 <h1>req/res approach with sobjectizer</h1>
 
@@ -393,16 +728,16 @@ ponger::on_ping (sending pong back)
 pinger::on_pong 1, success: 1
 </code></pre>
 
-<p>It should be noted, that request/response pattern <em>was</em> supported in sobjectizer 
-<a href="https://sourceforge.net/p/sobjectizer/wiki/so-5.5%20In-depth%20-%20Synchronous%20Interaction/">before</a> 
-version <code>5.6</code>, however it was dropped (well, moved to 
+<p>It should be noted, that request/response pattern <em>was</em> supported in sobjectizer
+<a href="https://sourceforge.net/p/sobjectizer/wiki/so-5.5%20In-depth%20-%20Synchronous%20Interaction/">before</a>
+version <code>5.6</code>, however it was dropped (well, moved to
 <a href="https://sourceforge.net/p/sobjectizer/wiki/About%20so5extra/]">sobjectizer-extra</a>, which has
 different licensing terms). The request/response was easy as the following like:</p>
 
 <pre><code>auto r = so_5::request_value&lt;Result,Request&gt;(mbox, timeout, params);
 </code></pre>
 
-<p>It is convenient; nevertheless, from the explanation sample &quot;How does it work?&quot;, the following 
+<p>It is convenient; nevertheless, from the explanation sample &quot;How does it work?&quot;, the following
 sample is available:</p>
 
 <pre><code>// Waiting and handling the result.
@@ -414,12 +749,12 @@ auto r = f__.get();
 
 <p>it suffers the same <strong>non-reactivity taint</strong> as described above, i.e. lack of possibility to
 answer other messages, while waiting a response. Hence, you can see &quot;Deadlocks&quot; section
-in the documentation, and the developers responsibility to handle the situation. </p>
+in the documentation, and the developers responsibility to handle the situation.</p>
 
 <h1>req/res approach with CAF</h1>
 
 <p>The <a href="http://actor-framework.org/">C++ actor framework</a> (aka CAF), does support request/response
-approach. </p>
+approach.</p>
 
 <pre><code>#include &lt;chrono&gt;
 #include &lt;iostream&gt;
@@ -490,12 +825,12 @@ pong was NOT received (timed out?), error code = 2
 </code></pre>
 
 <p>The call <code>client_actor-&gt;request(server_actor, timeout, args..)</code> returns an intermediate
-future-like object, where <code>then</code> method can be invoked with forwarded one-shot 
-actor behaviour. And, yes, there is <code>await</code> method too with non-reactive behaviour, 
-where you can shoot easily yourself with deadlock. So, according to the 
+future-like object, where <code>then</code> method can be invoked with forwarded one-shot
+actor behaviour. And, yes, there is <code>await</code> method too with non-reactive behaviour,
+where you can shoot easily yourself with deadlock. So, according to the
 <a href="https://actor-framework.readthedocs.io/en/latest/MessagePassing.html#sending-requests-and-handling-responses">documentation</a>
-<code>then</code> method is what we need, as it &quot;multiplexes the one-shot handler with the 
-regular actor behaviour and handles requests as they arrive&quot;. </p>
+<code>then</code> method is what we need, as it &quot;multiplexes the one-shot handler with the
+regular actor behaviour and handles requests as they arrive&quot;.</p>
 
 <h1>req/res approach with rotor</h1>
 
@@ -607,14 +942,14 @@ pong received
 pong was NOT received: request timeout
 </code></pre>
 
-<p>Comparing to <a href="http://actor-framework.org/">CAF</a>, <code>rotor</code>&#39;s version is more 
-verbose in the terms of LOC (lines of code). Partly this is caused by omitted 
+<p>Comparing to <a href="http://actor-framework.org/">CAF</a>, <code>rotor</code>&#39;s version is more
+verbose in the terms of LOC (lines of code). Partly this is caused by omitted
 <code>main</code> in <code>CAF</code>, while in <code>rotor</code> the main cannot be shortened because
 it is assumed to work with different loop backends as well as in cooperation
-with them and other non-actor loop components; partly because of in <code>CAF</code> 
+with them and other non-actor loop components; partly because of in <code>CAF</code>
 the message is hidden from user, while in <code>rotor</code> is is exposed outside
 due to performance reasons (i.e. allow the payload to be smart-pointer
-to have zero-copy); and finally because of <code>CAFs</code> intensive usage of 
+to have zero-copy); and finally because of <code>CAFs</code> intensive usage of
 lambdas, which leads to more compact code.</p>
 
 <p>However, it is still what it needed: reactive reactive request-response.</p>
@@ -623,24 +958,24 @@ lambdas, which leads to more compact code.</p>
 
 <p>On the top of <code>request-response</code> pattern, the <strong>ask pattern</strong> can be developed.
 In short, an client-actor makes several of requests, and then, depending on the
-results it makes an appropriate action. See 
+results it makes an appropriate action. See
 <a href="https://doc.akka.io/docs/akka/current/actors.html#ask-send-and-receive-future">akka</a>
-docs as an example, </p>
+docs as an example,</p>
 
-<p>However, the <strong>ask pattern</strong> it is a little bit more general: it should be 
+<p>However, the <strong>ask pattern</strong> it is a little bit more general: it should be
 possible to access to the initial context (message) as well as to all responses
-(some of which might fail). </p>
+(some of which might fail).</p>
 
 <p>The <code>sobjectizer</code> does not offer support request-response patters, so it is out of
 comparison. The <code>sobjectizer-extra</code> offers <code>std::future</code> based solution,
 however, as we seen, it not reactive (<code>while(!fututure.is_ready()){ ... }</code>)
 and as the <code>std::futures</code> are not compose-able, the <strong>ask pattern</strong> cannot
-be implemented. </p>
+be implemented.</p>
 
-<p>As we&#39;ve seen with <code>CAF</code> lambda approach, there are 2 lambdas <em>per request</em> 
-(one is for fail response and another is for success response); each one 
+<p>As we&#39;ve seen with <code>CAF</code> lambda approach, there are 2 lambdas <em>per request</em>
+(one is for fail response and another is for success response); each one
 captures outer request context and has access to its own response. Nonetheless,
-none of the lambdas has access to the contexts of the other requests; in 
+none of the lambdas has access to the contexts of the other requests; in
 other words the common context (which can include the original message)
 should be <em>shared</em> between them, and the code compactness seems to lost.</p>
 
@@ -745,18 +1080,18 @@ pong, dice = 0.744168
 success: 2, errors: 0
 </code></pre>
 
-<p>I&#39;m not <code>CAF</code>s expert, but it seems that in shared context it needs to 
+<p>I&#39;m not <code>CAF</code>s expert, but it seems that in shared context it needs to
 be captured the original behaviour to access <code>aout</code>, and there is need
-to have two methods per each request type (or single composed one 
+to have two methods per each request type (or single composed one
 with takes composite monad-like result).</p>
 
 <p>Let&#39;s see how it works with <code>rotor</code>, however actors&#39; addressing should be
-explained first. <code>Akka</code> and <code>CAF</code> actor frameworks use the <code>ActorRef</code> 
+explained first. <code>Akka</code> and <code>CAF</code> actor frameworks use the <code>ActorRef</code>
 notion to (globally) identify an actor. It seems that there is one-to-one
 matching between <code>ActorRef</code> and the actor. In <code>rotor</code> address is completely
-decoupled from actor, and it can process messages on any address it is 
+decoupled from actor, and it can process messages on any address it is
 subscribed to. There is &quot;main&quot; (or default) actors address which is used
-for main <code>rotor</code> mechanics, still it can be subscribed to any address 
+for main <code>rotor</code> mechanics, still it can be subscribed to any address
 and process messages on it.</p>
 
 <p>That technique is shown below, when an <strong>ephemeral address</strong> is created
@@ -891,8 +1226,8 @@ pong, dice = 0.8862
 success: 1, errors: 1
 </code></pre>
 
-<p>Rotor has special support of requests to be replied to custom addresses 
-(i.e. <code>request_via</code> method). The main difference with the <code>CAF</code> that instead 
+<p>Rotor has special support of requests to be replied to custom addresses
+(i.e. <code>request_via</code> method). The main difference with the <code>CAF</code> that instead
 of multiple lambdas with additional methods (<code>record_success</code> and <code>record_fail</code>)
 and &quot;gather-them-all&quot; method (<code>output_results</code>), with <code>rotor</code> there is
 just single gather-them-all method (<code>on_pong</code>), which actually has exactly
@@ -900,28 +1235,28 @@ the same signature when as the previous example with <code>rotor</code>.</p>
 
 <h1>Conclusion</h1>
 
-<p>When you start thinking about possible failures the initially request 
+<p>When you start thinking about possible failures the initially request
 response schema abruptly becomes non-trivial. Timeout and other errors
-should be handled and without framework support the code quite quickly 
+should be handled and without framework support the code quite quickly
 becomes cumbersome.</p>
 
 <p>There is still additional requirements, that the provided by a framework
-support of request/response pattern did not come of cost of loosing 
-actor&#39;s <em>reactivity</em>; for simplicity, you may treat it as 
+support of request/response pattern did not come of cost of loosing
+actor&#39;s <em>reactivity</em>; for simplicity, you may treat it as
 dead-lock avoidance. Another nice-to-have feature would be composability
-of the requests. </p>
+of the requests.</p>
 
-<p>At the moment <code>sobjectizer</code> does not provides request/response pattern, 
-however in the past it did, however it was <em>non-reactive</em>. </p>
+<p>At the moment <code>sobjectizer</code> does not provides request/response pattern,
+however in the past it did, however it was <em>non-reactive</em>.</p>
 
-<p>Both <code>CAF</code> and <code>rotor</code> do provide request/response pattern keeping 
-still actors <em>reactive</em>. <code>CAF</code> has more compact code; the <code>rotor&#39;s</code> 
+<p>Both <code>CAF</code> and <code>rotor</code> do provide request/response pattern keeping
+still actors <em>reactive</em>. <code>CAF</code> has more compact code; the <code>rotor&#39;s</code>
 code is more verbose. It seems that in <code>CAF</code> you should roll
-you own composability of requests, i.e. develop context class 
+you own composability of requests, i.e. develop context class
 and make it shared between different requests handlers. In <code>rotor</code>
 the composability of requests seems more natural via creating
-ephemeral reply addresses, which can associate the linked group 
-of requests in single place. </p>
+ephemeral reply addresses, which can associate the linked group
+of requests in single place.</p>
 
 <h1>Update</h1>
 
@@ -931,23 +1266,29 @@ of requests in single place. </p>
 
 <p>So, it should be updated, that <a href="https://github.com/Stiffstream/so5extra">sobjetizer-extra</a>
 provides support for request-response pattern, but only via a bit
-different name (<code>async_op</code>, in the case). It is completely 
+different name (<code>async_op</code>, in the case). It is completely
 asynchronous and free of dead-locks, i.e. <strong>reactive</strong>.</p>
 
 <p>It is also
 <a href="https://github.com/eao197/so5-request-reply-example/blob/master/dev/sample_composability_2/main.cpp">composable</a>,
-with the approximately same lines of code as <code>rotor</code> example. 
-The composability is done via lambdas (as in <code>CAF</code>), but 
+with the approximately same lines of code as <code>rotor</code> example.
+The composability is done via lambdas (as in <code>CAF</code>), but
 the responses are redirected to different <code>mboxes</code> (as the
 ephemeral addresses in <code>rotor</code>).</p>
 
-<p>So, it is possible to get the same result with all considered 
+<p>So, it is possible to get the same result with all considered
 frameworks.</p>
 
 
+                <p>Tags:
+                    <a href="http://basiliscos.github.io/blog/tag/c/">c++</a>
+                    <a href="http://basiliscos.github.io/blog/tag/rotor/">rotor</a>
+                </p>
 
         ]]></content>
         <updated>2019-10-05T00:00:00Z</updated>
+        <category term="c++" />
+        <category term="rotor" />
     </entry>
     <entry>
         <id>http://basiliscos.github.io/blog/2019/08/19/cpp-supervisors/</id>
@@ -1007,7 +1348,7 @@ runtime does not creates an hierarchy, i.e. it is flat:</p>
 
 <p><img alt="caf.png" src="http://basiliscos.github.io/blog/2019/08/19/cpp-supervisors/caf.png"></p>
 
-<p>There is actors groupping capabilities in <a href="https://actor-framework.org/">caf</a>, which allows to multicast 
+<p>There is actors groupping capabilities in <a href="https://actor-framework.org/">caf</a>, which allows to multicast
 messages to all actors inside the group, e.g. shutdown messsage.</p>
 
 <h2>sobjectizer</h2>
@@ -1018,7 +1359,7 @@ similar role to <code>system</code> in <a href="https://actor-framework.org/">ca
 thus making a hierarchy.</p>
 
 <p>However, it should be noted, that <code>cooperation</code> in <a href="https://github.com/Stiffstream/sobjectizer">sobjectizer</a> <em>in not an actor</em>;
-it is the type provided by <a href="https://github.com/Stiffstream/sobjectizer">sobjectizer</a> and there is no possibility to roll 
+it is the type provided by <a href="https://github.com/Stiffstream/sobjectizer">sobjectizer</a> and there is no possibility to roll
 your own implementation.</p>
 
 <p>The <code>cooperation</code> in <a href="https://github.com/Stiffstream/sobjectizer">sobjectizer</a> is some kind of supervisable group of actors,
@@ -1037,11 +1378,11 @@ or <code>deregistration</code>).</p>
 
 <p>Now follows my own vision how to get <em>fine-gained</em> supervising.</p>
 
-<p>Thus, there is no <em>direct</em> actor shutdown observation; only indirect (i.e. 
-via cooperation death notification). If there is need to observe individual 
-actor shutdown, it should be the only actor on a <code>cooperation</code>, and the 
-cooperation should be monitored; in the case of actor crash, it the new 
-cooperation should be spawned, and the new actor should be spawned on it, 
+<p>Thus, there is no <em>direct</em> actor shutdown observation; only indirect (i.e.
+via cooperation death notification). If there is need to observe individual
+actor shutdown, it should be the only actor on a <code>cooperation</code>, and the
+cooperation should be monitored; in the case of actor crash, it the new
+cooperation should be spawned, and the new actor should be spawned on it,
 and the monitoring subscription routine above should be repeated.</p>
 
 <p>This can be visualized as the following:</p>
@@ -1123,9 +1464,15 @@ with the same locality use root supervisor&#39;s messages queue.</p>
 <em>peers entry points</em>.</p>
 
 
+                <p>Tags:
+                    <a href="http://basiliscos.github.io/blog/tag/c/">c++</a>
+                    <a href="http://basiliscos.github.io/blog/tag/rotor/">rotor</a>
+                </p>
 
         ]]></content>
         <updated>2019-08-19T00:00:00Z</updated>
+        <category term="c++" />
+        <category term="rotor" />
     </entry>
 </feed>
 
