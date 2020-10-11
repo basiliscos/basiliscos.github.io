@@ -4,7 +4,7 @@
         <loc>http://basiliscos.github.io/</loc>
         <changefreq>daily</changefreq>
         <priority>0.3</priority>
-        <lastmod>2020-07-23</lastmod>
+        <lastmod>2020-10-08</lastmod>
     </url>
     <url>
         <loc>http://basiliscos.github.io/blog/2019/08/19/cpp-supervisors/</loc>
@@ -25,10 +25,16 @@
         <lastmod>2020-07-23</lastmod>
     </url>
     <url>
+        <loc>http://basiliscos.github.io/blog/2020/10/08/rotor-v0.09-release/</loc>
+        <changefreq>weekly</changefreq>
+        <priority>0.5</priority>
+        <lastmod>2020-10-08</lastmod>
+    </url>
+    <url>
         <loc>http://basiliscos.github.io/blog/tag/c/</loc>
         <changefreq>daily</changefreq>
         <priority>0.3</priority>
-        <lastmod>2020-07-23</lastmod>
+        <lastmod>2020-10-08</lastmod>
     </url>
     <url>
         <loc>http://basiliscos.github.io/blog/tag/rotor/</loc>
@@ -40,7 +46,7 @@
         <loc>http://basiliscos.github.io/page/</loc>
         <changefreq>weekly</changefreq>
         <priority>0.5</priority>
-        <lastmod>2020-07-27</lastmod>
+        <lastmod>2020-10-11</lastmod>
     </url>
 </urlset>
 

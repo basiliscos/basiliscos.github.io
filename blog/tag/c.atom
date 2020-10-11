@@ -2,7 +2,7 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>http://basiliscos.github.io/blog/tag/c/</id>
     <title>Basiliscos&#39;s blog</title>
-    <updated>2020-07-23T00:00:00Z</updated>
+    <updated>2020-10-08T00:00:00Z</updated>
     <link href="http://basiliscos.github.io/blog/tag/c.atom" rel="self" />
     <link href="http://basiliscos.github.io/blog/tag/c/" rel="alternate" />
     <author>
@@ -10,6 +10,215 @@
     </author>
     <generator version="0.097">Statocles</generator>
 
+    <entry>
+        <id>http://basiliscos.github.io/blog/2020/10/08/rotor-v0.09-release/</id>
+        <title>rotor v0.09 release</title>
+        <author><name>Ivan Baidakou (aka basiliscos)</name></author>
+        <link href="http://basiliscos.github.io/blog/2020/10/08/rotor-v0.09-release/" rel="alternate" />
+        <content type="html"><![CDATA[
+            <p>The original article was published at <a href="https://habr.com/">habr.com</a> in <a href="https://habr.com/ru/company/crazypanda/blog/522588/">English</a> and <a href="https://habr.com/ru/company/crazypanda/blog/522892/">Russian</a>. Due to outstanding changes I decided to write a decicated article explaining <code>rotor</code> and key points in a new release.</p>
+
+<p><a href="https://github.com/basiliscos/cpp-rotor">rotor</a> is a <a href="https://basiliscos.github.io/cpp-rotor-docs/md__home_b_development_cpp_cpp-rotor_docs_Rationale.html">non-intrusive</a> event loop friendly C++ actor micro framework, similar to its elder brothers like <a href="https://actor-framework.org/">caf</a> and <a href="https://github.com/Stiffstream/sobjectizer">sobjectizer</a>. The new release came out under the flag of <strong>pluginization</strong>, which affects the entire lifetime of an actor.</p>
+
+<h2>Actor Linking</h2>
+
+<p>The actor system is all about interactions between actors, i.e. sending messages to each other (and producing side effects for the outer world or listening to messages it produces). However, to let a message be delivered to the final actor, the actor should <strong>be alive</strong> (1); in other words, if actor <code>A</code> is going to send message <code>M</code> to actor <code>B</code>, <code>A</code> should somehow be sure that actor <code>B</code> is online and will not go offline while <code>M</code> is routing.</p>
+
+<p>Before <a href="https://github.com/basiliscos/cpp-rotor">rotor</a> <code>v0.09</code>, that kind of warranty was only available due to child-parent relations, i.e. between supervisor and its child-actor. In this case, an actor was guaranteed that a message would be delivered to its supervisor because the supervisor <em>owned</em> the actor and said supervisor&#39;s lifetime covered the respective actor&#39;s lifetime. Now, with the release of <code>v0.09</code>, it is possible to link actor <code>A</code> with actor <code>B</code> that are not parent- or child-related to one another and to make sure that all messages will be delivered after successful linking .</p>
+
+<p>So, linking actors is performed somewhat along these lines:</p>
+
+<pre><code>namespace r = rotor;
+
+void some_actor_t::on_start() noexcept override {
+    request&lt;payload::link_request_t&gt;(b_address).send(timeout);
+}
+
+void some_actor_t::on_link_response(r::message::link_response_t &amp;response) noexcept {
+    auto&amp; ec = message.payload.ec;
+    if (!ec) {
+        // successful linking
+    }
+}
+</code></pre>
+
+<p>However, code like this should not be used directly as is... because it is inconvenient. It becomes more obvious if you try linking actor <code>A</code> with 2 or more actors (<code>B1</code>, <code>B2</code>, etc.), since <code>some_actor_t</code> should keep an internal count of how many target actors are waiting for (successful) link responses. And here the pluginization system featured in the <code>v0.09</code> release comes to the rescue:</p>
+
+<pre><code>namespace r = rotor;
+
+void some_actor_t::configure(r::plugin::plugin_base_t &amp;plugin) noexcept override {
+    plugin.with_casted&lt;r::plugin::link_client_plugin_t&gt;(
+        [&amp;](auto &amp;p) {
+            p.link(B1_address);
+            p.link(B2_address);
+        }
+    );
+}
+</code></pre>
+
+<p>Now, this is much more convenient, since <code>link_client_plugin_t</code> is included out of the box with the <code>rotor::actor_base_t</code>. Nevertheless, it&#39;s still not enough, because it does not answer a few important questions, such as: 1. When is actor linking performed (and a &quot;by-question&quot;: when is actor <strong>unlinking</strong> performed)? 2. What happens if the target actor (aka &quot;server&quot;) does not exist or rejects linking? 3. What happens if the target actor decides to self-shutdown when there are &quot;clients&quot; still linked to it?</p>
+
+<p>To provide answers to these questions, the concept of actor lifetime should be revisited.</p>
+
+<h2>Async Actor Initialization And Shutdown</h2>
+
+<p>Represented in a simplified manner is, here is how an actor’s state usually changes: <code>new</code> (constructor) -&gt; <code>initializing</code> -&gt; <code>initialized</code> -&gt; <code>operational</code> -&gt; <code>shutting down</code> -&gt; <code>shut down</code></p>
+
+<p>The main job is performed in the <code>operational</code> state, and it is up to the user to define what an actor is to do in its up-and-running mode.</p>
+
+<p>In the <strong>I-phase</strong> (i.e. <code>initializing</code> -&gt; <code>initialized</code>), the actor should prepare itself for further functioning: locate and link with other actors, establish connection to the database, acquire whichever resources it needs to be operational. The key point of <a href="https://github.com/basiliscos/cpp-rotor">rotor</a> is that I-phase is <strong>asynchronous</strong>, so an actor should notify its supervisor when it is ready (2).</p>
+
+<p>The <strong>S-phase</strong> (i.e. <code>shutting down</code> -&gt; <code>shut down</code>) is complementary to the <strong>I-phase</strong>, i.e. the actor is being asked to shut down, and, when it is done, it should notify its supervisor.</p>
+
+<p>While it sounds easy, the tricky bit lies in the <strong>composability</strong> of actors, when they form Erlang-like hierarchies of responsibilities (see my article on <a href="https://basiliscos.github.io/blog/2019/08/19/cpp-supervisors/">trees of Supervisors</a>). In other words, any actor can fail during its <code>I-phase</code> or <code>S-phase</code>, and that can lead to asynchronous collapse of the entire hierarchy, regardless of the failed actor&#39;s location within it. Essentially, the entire hierarchy of actors becomes <code>operational</code>, or, if something happens, the entire hierarchy becomes <code>shut down</code>.</p>
+
+<p><a href="https://github.com/basiliscos/cpp-rotor">rotor</a> seems unique with its init/shutdown approach. There is nothing similar in <a href="https://actor-framework.org/">caf</a>;
+in <a href="https://github.com/Stiffstream/sobjectizer">sobjectizer</a>, there is a <a href="https://sourceforge.net/p/sobjectizer/wiki/so5extra%201.0%20Shutdowner/">shutdown helper</a>, which
+carries a function similar to the <code>S-phase</code> above; however, it is limited to one actor only and offers no <code>I-phase</code> because <a href="https://github.com/Stiffstream/sobjectizer">sobjectizer</a> has no concept of hierarchies (see <strong>update</strong> below).</p>
+
+<p>While using <a href="https://github.com/basiliscos/cpp-rotor">rotor</a>, it was discovered that the progress of the <code>I-phase</code> (<code>S-phase</code>) may potentially require <em>many</em> resources to be acquired (or released) asynchronously, which means that no single component, or actor, is able, by its own will, to answer the question of whether it has or has not completed the current phase. Instead, the answer comes as a result of collaborative efforts, handled in the right order. And this is where <strong>plugins</strong> come into play; they are like pieces, with each one responsible for a particular job of initialization/shutdown.</p>
+
+<p>So, here are the promised answers related to <code>link_client_plugin_t</code>:</p>
+
+<ul>
+<li>Q: When is the actor linking or unlinking performed? A: When the actor state is <code>initializing</code> or <code>shutting down</code> respectively.</li>
+<li>Q: What happens if the target actor (aka &quot;server&quot;) does not exist or rejects linking? A: Since this happens when the actor state is <code>initializing</code>, the plugin will detect the fail condition and will trigger client-actor shutdown. That may trigger a cascade effect, i.e. its supervisor will be triggered to shut down, too.</li>
+<li>Q: What happens if the target actor decides to self-shutdown when there are &quot;clients&quot; still linked to it? A: The &quot;server-actor&quot; will ask its clients to unlink, and once all &quot;clients&quot; have confirmed unlinking, the &quot;server-actor&quot; will continue the shutdown procedure (3).</li>
+</ul>
+
+<h2>A Simplified Example</h2>
+
+<p>Let&#39;s assume that there is a database driver with async-interface with one of the available event-loops for <code>rotor</code>, and there will be TCP-clients connecting to our service. The database will be served by <code>db_actor_t</code> and the service for serving clients will be named <code>acceptor_t</code>. The database actor is going to look like this:</p>
+
+<pre><code>namespace r = rotor;
+
+struct db_actor_t: r::actor_base_t {
+
+    struct resource {
+        static const constexpr r::plugin::resource_id_t db_connection = 0;
+    }
+
+    void configure(r::plugin::plugin_base_t &amp;plugin) noexcept override {
+        plugin.with_casted&lt;r::plugin::registry_plugin_t&gt;([this](auto &amp;p) {
+            p.register_name(&quot;service::database&quot;, this-&gt;get_address())
+        });
+        plugin.with_casted&lt;r::plugin::resources_plugin_t&gt;([this](auto &amp;) {
+            resources-&gt;acquire(resource::db_connection);
+            // initiate async connection to database
+        });
+    }
+
+    void on_db_connection_success() {
+        resources-&gt;release(resource::db_connection);
+        ...
+    }
+
+    void on_db_disconnected() {
+        resources-&gt;release(resource::db_connection);
+    }
+
+    void shutdown_start() noexcept override {
+        r::actor_base_t::shutdown_start();
+        resources-&gt;acquire(resource::db_connection);
+        // initiate async disconnection from database, e.g. flush data
+    }
+};
+</code></pre>
+
+<p>The inner namespace <code>resource</code> is used to identify the database connection as a resource. It is good practice, better than hard-coding magic numbers like <code>0</code>. During the actor configuration stage (which is part of initialization), when <code>registry_plugin_t</code> is ready, it will asynchronously register the actor address under a symbolic name of <code>service::database</code> in the <code>registry</code> (will be shown further down below). Then, with the <code>resources_plugin_t</code>, it acquires the database connection resource, blocking any further initialization and launching connection to the database. When connection is established, the resource is released, and the <code>db_actor_t</code> becomes <code>operational</code>. The <code>S-phase</code> is symmetrical, i.e. it blocks shutdown until all data is flushed to DB and connection is closed; once this step is complete, the actor will continue its shutdown (4).</p>
+
+<p>The client acceptor code should look like this:</p>
+
+<pre><code>namespace r = rotor;
+struct acceptor_actor_t: r::actor_base_t {
+    r::address_ptr_t db_addr;
+
+    void configure(r::plugin::plugin_base_t &amp;plugin) noexcept override {
+        plugin.with_casted&lt;r::plugin::registry_plugin_t&gt;([](auto &amp;p) {
+            p.discover_name(&quot;service::database&quot;, db_addr, true).link();
+        });
+    }
+
+    void on_start() noexcept override {
+        r::actor_base_t::on_start();
+        // start accepting clients, e.g.
+        // asio::ip::tcp::acceptor.async_accept(...);
+    }
+
+    void on_new_client(client_t&amp; client) {
+        // send&lt;message::log_client_t&gt;(db_addr, client)
+    }
+};
+</code></pre>
+
+<p>The key point here is the <code>configure</code> method. When <code>registry_plugin_t</code> is ready, it is configured to discover the name <code>service::database</code> and, when found, store it in the <code>db_addr</code> field; it then links the actor to the <code>db_actor_t</code>. If <code>service::database</code> is not found, the acceptor shuts down (i.e. <code>on_start</code> is not invoked); if the linking is not confirmed, the acceptor shuts down, too. When everything is fine, the acceptor starts accepting new clients.</p>
+
+<p>The operational part itself is missing for the sake of brevity because it hasn&#39;t changed in the new <code>rotor</code> version: there is a need to define payload and message (including request and response types), as well as define methods which will accept the messages and finally subscribe to them.</p>
+
+<p>Let&#39;s bundle everything together in a <code>main.cpp</code>. Let&#39;s assume that the <code>boost::asio</code> event loop is used.</p>
+
+<pre><code>namespace asio = boost::asio;
+namespace r = rotor;
+
+...
+asio::io_context io_context;
+auto system_context = rotor::asio::system_context_asio_t(io_context);
+auto strand = std::make_shared&lt;asio::io_context::strand&gt;(io_context);
+auto timeout = r::pt::milliseconds(100);
+auto sup = system_context-&gt;create_supervisor&lt;r::asio::supervisor_asio_t&gt;()
+               .timeout(timeout)
+               .strand(strand)
+               .create_registry()
+               .finish();
+
+sup-&gt;create_actor&lt;db_actor_t&gt;().timeout(timeout).finish();
+sup-&gt;create_actor&lt;acceptor_actor_t&gt;().timeout(timeout).finish();
+
+sup-&gt;start();
+io_context.run();
+</code></pre>
+
+<p>The <code>builder</code> pattern is actively used in the <code>v0.09</code> <a href="https://github.com/basiliscos/cpp-rotor">rotor</a>. Here, the root supervisor <code>sup</code> was created with 3 actors instantiated on it: the user defined <code>db_actor_t</code> and <code>acceptor_actor_t</code> and implicitly created a registry actor. As is typical for the actor system, all actors are decoupled from one another, only sharing message types (skipped here).</p>
+
+<p>All actors are simply created here, and the supervisor does not know the relations between them because actors are loosely coupled and have become more autonomous since <code>v0.09</code>.</p>
+
+<p>Runtime configuration can be completely different: actors can be created on different threads, different supervisors, and even using different event loops, but the actor implementation remains the same (5). In that case, there will be more than one root supervisor; however, to let them find each other, the <code>registry</code> actor address should be shared between them. This is also supported via the <code>get_registry_address()</code> method of <code>supervisor_t</code>.</p>
+
+<h2>Summary</h2>
+
+<p>The most important feature of <a href="https://github.com/basiliscos/cpp-rotor">rotor</a> <code>v0.09</code> is the pluginization of its core. Among other <a href="https://basiliscos.github.io/cpp-rotor-docs/index.html">plugins</a>, the most important are: the <code>link_client_plugin_t</code> plugin, which maintains kind of a &quot;virtual connection&quot; between actors; the <code>registry_plugin_t</code>, which allows registering and discovering actor addresses by their symbolic names; and the <code>resources_plugin_t</code>, which suspends actor init/shutdown until external asynchronous events occur.</p>
+
+<p>There are a few less prominent changes in the release, such as the new non-public properties <a href="https://basiliscos.github.io/blog/2020/07/23/permission-model/">access</a> and builder pattern for actor construction.</p>
+
+<p>Any feedback on <a href="https://github.com/basiliscos/cpp-rotor">rotor</a> is welcome!</p>
+
+<p>PS. I&#39;d like to say thanks to Crazy Panda for supporting me in my actor model research.</p>
+
+<h3>Notes</h3>
+
+<p>(1) Currently, it will lead to segfault upon attempt to deliver a message to an actor whose supervisor is already destroyed.</p>
+
+<p>(2) If it does not notify, init-request timeout will occur, and the actor will be asked by its supervisor to shut down, i.e. bypass the <code>operational</code> state.</p>
+
+<p>(3) You might ask: what happens if a client-actor does not confirm unlinking on time? Well, this is somewhat of a violation of contract, and the <code>system_context_t::on_error(const std::error_code&amp;)</code> method will be invoked, which, by default, will print error to <code>std::cerr</code> and invoke <code>std::terminate()</code>. To avoid contract violation, shutdown timeouts should be tuned to allow client-actors to unlink on time.</p>
+
+<p>(4) During shutdown, the <code>registry_plugin_t</code> will unregister all registered names in the <code>registry</code>.</p>
+
+<p>(5) With the exception of when different event loops are used, when actors use the event loop API directly, they will, obviously, change following the event loop change, but that&#39;s beyond <a href="https://github.com/basiliscos/cpp-rotor">rotor</a>.</p>
+
+<h3>Update</h3>
+
+<p>During discussings with <code>sobjectizer</code> author below, it was clarified <code>sobjectizer</code> <a href="https://github.com/Stiffstream/so5extra/wiki/so5extra-1.4-Shutdowner">shutdowner</a> and <a href="https://sourceforge.net/p/sobjectizer/wiki/so-5.5.19%20Stop%20guards/">stop guard</a> offer &quot;long lasting&quot; shutdown actions, however it&#39;s main purpose to give some actors additional time for shutdown, even if on the <code>Environment</code> <code>stop</code> was invoked. The asynchronous shutdown (and initialization) similar to <a href="https://github.com/basiliscos/cpp-rotor">rotor</a> <code>I-phase</code> and <code>S-phase</code> can be modeled via actor&#39;s states, if needed. This is, however, framework <strong>users</strong> responsibility, contrary to <code>rotor</code>, where it is <strong>the framework</strong> responsibility.</p>
+
+
+                <p>Tags:
+                    <a href="http://basiliscos.github.io/blog/tag/c/">c++</a>
+                </p>
+
+        ]]></content>
+        <updated>2020-10-08T00:00:00Z</updated>
+        <category term="c++" />
+    </entry>
     <entry>
         <id>http://basiliscos.github.io/blog/2020/07/23/permission-model/</id>
         <title>C++ permission model</title>
