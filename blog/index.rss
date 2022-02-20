@@ -254,6 +254,8 @@ with each other via <strong>messaging</strong>. Shape the individual actors into
 hierarchies with <strong>supervisors</strong>, which provide fine-gained control of actors
 at a low-level and at a high-level. Make your program reliable.</p>
 
+<p><img alt="terminator.jpg" src="http://basiliscos.github.io/blog/2022/02/20/supervising-in-c-how-to-make-your-programs-reliable/terminator.jpg"></p>
+
 
                     <p>Tags:
                         <a href="http://basiliscos.github.io/blog/tag/c/">c++</a>
