@@ -249,4 +249,6 @@ with each other via **messaging**. Shape the individual actors into manageable
 hierarchies with **supervisors**, which provide fine-gained control of actors
 at a low-level and at a high-level. Make your program reliable.
 
+
 ![terminator.jpg](terminator.jpg)
+

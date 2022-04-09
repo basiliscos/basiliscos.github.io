@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta content="width=device-width, initial-scale=1" name="viewport">
+        <link href="/theme/css/normalize.css" rel="stylesheet">
+        <link href="/theme/css/skeleton.css" rel="stylesheet">
+        <link href="/theme/css/statocles-default.css" rel="stylesheet">
+        <link href="//maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css" rel="stylesheet">
+        <title>Basiliscos's blog</title>
+        <meta content="Ivan Baidakou (aka basiliscos)" name="author">
+        <meta content="Statocles 0.097" name="generator">
+        <link href="/blog/index.atom" rel="alternate" type="application/atom+xml">
+        <link href="/blog/index.rss" rel="alternate" type="application/rss+xml">
+        
+    </head>
+    <body>
+        <header>
+            <nav class="navbar">
+                <div class="container">
+                    <a class="brand" href="/">Basiliscos&#39;s blog</a>
+                    <ul>
+                        <li>
+                            <a href="/">Blog</a>
+                        </li>
+                    </ul>
+                    
+                </div>
+            </nav>
+            
+        </header>
+        <div class="main container">
+            <div class="row">
+                <div class="nine columns">
+                    <main>
+                        
+
+<article>
+    <header>
+        <h1><a href="/blog/2019/08/19/cpp-supervisors/">Trees of Supervisors in C++ (caf, sobjectizer, rotor)</a></h1>
+
+        <aside>
+            <time datetime="2019-08-19">
+                Posted on 2019-08-19
+            </time>
+                <span class="author">
+                    by Ivan Baidakou (aka basiliscos)
+                </span>
+        </aside>
+
+        <p class="tags">Tags:
+            <a href="/blog/tag/c/" rel="tag">c++</a>
+            <a href="/blog/tag/rotor/" rel="tag">rotor</a>
+        </p>
+
+    </header>
+
+    <h1>The notion of supervisor &amp; trees of supervisors</h1>
+
+<p>Erlang is famous for its <a href="http://erlang.org/doc/design_principles/sup_princ.html">erlang-supervisor</a> approach, i.e. an actor which is
+responsible managing it&#39;s child actors lifetime (start, restart, shutdown).</p>
+
+<p>In regular C++ code an error (exception) propagates towards the caller-side.
+In actor-based approach error is supervised by an actor owner (supervisor) and
+it&#39;s up to supervisor to decide how to react, e.g. restart actor but if it
+crashed no more than 3 times per minute. The caller-side is decoupled from
+this details at all.</p>
+
+<p>In the case of child crash supervisor might decide either to restart it,
+or, if the local situation is considered too bad, then shutdown itself (and all it&#39;s
+children) and <em>delegate</em> the problem upwards, i.e. to is&#39;t own supervisor.
+The parent supervisor might, again, decide either restart or delegate the
+problem upwards again.</p>
+
+<p>That form of delegating problem upto root supervisor naturally form tree
+of responsibilities, or, if you like, tree of supervision. This allows
+to an application slowly degrade and still be available (provide service)
+when non-fatal errors occur.</p>
+
+<h1>C++ supervising specifics</h1>
+
+<p>Erlang supervisors tolerate even programmer errors; this is known as <a href="http://wiki.c2.com/?LetItCrash">let-it-crash</a>
+principle, as a supervisor will just respawn crashed actor.</p>
+
+<p>In C++ we cannot tolerate developer mistakes as in Erlang: there is no
+reasonable reaction in general to leaked memory or <code>std::abort()</code> call, right?
+Instead, in C++ world we assume that an actor is able to detect that it
+is in invalid state, and just terminate, possibly notifying it&#39;s exit
+reason upwards. In the upper layer the actor exit will be observed,
+and a decision will be made how to handle with the situation.</p>
+
+<h1>Supervisor-like capabilities of caf &amp; sobjectizer</h1>
+
+<h2>caf (c++ actor framework)</h2>
+
+<p>There is no explicit supervisor role in <a href="https://actor-framework.org/">caf</a>. However, according to
+documentation <a href="https://actor-framework.readthedocs.io/en/latest/MessagePassing.html#down-handler">caf-monitor</a>, it is possible to subscribe to special system
+<em>down message</em> and provide appropriate reaction. This can be done in recursive
+manner, i.e. tree of responsibilities <em>can</em> be build.</p>
+
+<p>However, if I read documentation correctly, any actor can monitor
+any other actor death. The responsibility of reaction is somewhat blurred
+from the API perspective. Let&#39;s name the approach <em>supervising-via-monitoring</em>.</p>
+
+<p>As the actors are spawned (and owned) by <code>system</code>, the application at the
+runtime does not creates an hierarchy, i.e. it is flat:</p>
+
+<p><img alt="caf.png" src="/blog/2019/08/19/cpp-supervisors/caf.png"></p>
+
+<p>There is actors groupping capabilities in <a href="https://actor-framework.org/">caf</a>, which allows to multicast
+messages to all actors inside the group, e.g. shutdown messsage.</p>
+
+<h2>sobjectizer</h2>
+
+<p>In <a href="https://github.com/Stiffstream/sobjectizer">sobjectizer</a> actors (agents, in the sobjectizer&#39;s terminology) are spawned
+by <code>cooperation</code>; the cooperation itself is created by <code>environment</code> (the
+similar role to <code>system</code> in <a href="https://actor-framework.org/">caf</a>). <code>cooperations</code> can create child <code>cooperations</code>,
+thus making a hierarchy.</p>
+
+<p>However, it should be noted, that <code>cooperation</code> in <a href="https://github.com/Stiffstream/sobjectizer">sobjectizer</a> <em>in not an actor</em>;
+it is the type provided by <a href="https://github.com/Stiffstream/sobjectizer">sobjectizer</a> and there is no possibility to roll
+your own implementation.</p>
+
+<p>The <code>cooperation</code> in <a href="https://github.com/Stiffstream/sobjectizer">sobjectizer</a> is some kind of supervisable group of actors,
+as it requires that all actors to be started and successfully registered; if
+any of them fails, coorepation will shutdown and unregister all (already registered)
+actors.</p>
+
+<p>Actors <em>are managed</em> by <code>cooperations</code>; how actors can get back the information
+from <code>cooperations</code>? The <code>notificator</code> object should be created by <code>cooperation</code>
+with the messages destination <code>mbox</code>; then the notificator object should be added
+into the cooperation. Notificators are two kinds: <code>reg</code> and <code>dereg</code>, i.e. they
+observe actors startup or shutdown events. Lastly, actor should subscribe
+to the appropriate event on the message box. However,this is not an individual
+actor shutdown event, it is <em>whole cooperation</em> shutdown event (<code>registration</code>
+or <code>deregistration</code>).</p>
+
+<p>Now follows my own vision how to get <em>fine-gained</em> supervising.</p>
+
+<p>Thus, there is no <em>direct</em> actor shutdown observation; only indirect (i.e.
+via cooperation death notification). If there is need to observe individual
+actor shutdown, it should be the only actor on a <code>cooperation</code>, and the
+cooperation should be monitored; in the case of actor crash, it the new
+cooperation should be spawned, and the new actor should be spawned on it,
+and the monitoring subscription routine above should be repeated.</p>
+
+<p>This can be visualized as the following:</p>
+
+<p><img alt="sobjectizer.png" src="/blog/2019/08/19/cpp-supervisors/sobjectizer.png"></p>
+
+<p>However, this looks a little bit overcomplicated. Indeed, <a href="https://github.com/Stiffstream/sobjectizer">sobjectizer</a>
+way of supervising is <em>coarse-grained</em> supervising: not individual actors
+should be supervised, but group of related actors (<code>cooperation</code>).</p>
+
+<p><img alt="sobjectizer-coarse.png" src="/blog/2019/08/19/cpp-supervisors/sobjectizer-coarse.png"></p>
+
+<p>For more details, please refer <a href="https://bitbucket.org/sobjectizerteam/sobjectizer/wiki/so-5.6-docs/tutorials/underhood.md">sobjectizer-underhood</a>.</p>
+
+<h1>Supervising in Rotor</h1>
+
+<p>In <a href="https://github.com/basiliscos/cpp-rotor/">rotor</a> we&#39;d like to achieve <em>fine-gained</em> Erlang-like supervising:</p>
+
+<p><img alt="rotor.png" src="/blog/2019/08/19/cpp-supervisors/rotor.png"></p>
+
+<p>Please note the absence of dotted lines, as they coincide with the solid
+lines, because the <em>ownership</em> of an actor is the same of <em>supervising</em> it.
+An supervisor in <a href="https://github.com/basiliscos/cpp-rotor/">rotor</a> is also an actor. The supervising hierarchy is
+naturally formed (unlike in <a href="https://actor-framework.org/">caf</a>), and still there are no doubling
+of the hierarchy as in <a href="https://github.com/Stiffstream/sobjectizer">sobjectizer</a>, where framework supplied managing
+units (<code>cooperations</code>) are intermixed with user supplied actors.</p>
+
+<p>However, parent-child relation between supervisors upto <code>v0.02</code> version
+was available only for <a href="https://www.boost.org:/doc/libs/release/libs/asio/" title="Boost Asio">boost-asio</a> based supervisors... because each
+supervisor incorporated own <code>strand</code>, which was generated by root
+<code>io_context</code>. That way it was a mixture of execution controller
+and supervising; so the real picture was like:</p>
+
+<p><img alt="rotor-v0.02.png" src="/blog/2019/08/19/cpp-supervisors/rotor-v0.02.png"></p>
+
+<p>Nonetheless, it imposed the sequential execution context (<code>strand</code>) for every
+supervisor, while it not necessary was needed. Also, the supervising hierarchy
+was not available for other event-loops, because <code>strand</code> seems the <a href="https://www.boost.org:/doc/libs/release/libs/asio/" title="Boost Asio">boost-asio</a>
+unique feature.</p>
+
+<p>To solve the situation, the <code>locality</code> notion was introduced. Under the hood,
+it is plain <code>const void*</code> marker. By default, locality just a pointer to
+root supervisor, if two supervisors has the same locality, they are executed
+in the same (thread-safe) context. This makes it possible to have supervising
+trees in all supported event loops in rotor.</p>
+
+<p>How about <a href="https://www.boost.org:/doc/libs/release/libs/asio/" title="Boost Asio">boost-asio</a>? <code>locality</code> here become a pointer to <code>strand</code>, making
+it possible to introduce executing context (implies supervising) on demand,
+i.e. something like this:</p>
+
+<p><img alt="rotor-v0.03.png" src="/blog/2019/08/19/cpp-supervisors/rotor-v0.03.png"></p>
+
+<p>Here <code>supervisor_root</code>, <code>supervisor_1</code>, <code>supervisor_2</code> are executed on
+the context on one <code>strand</code>, while <code>supervisor_2</code> has it&#39;s own <code>strand</code>.</p>
+
+<p>This is available in <a href="https://github.com/basiliscos/cpp-rotor/">rotor</a> <code>v0.03</code>. (This led to API breaking changes,
+as now boost::asio supervisor takes <code>strand</code> shared pointer in config).</p>
+
+<h2>Rotor v0.03 messaging internals</h2>
+
+<p>Messaging in rotor done without private actor&#39;s message boxes unlike
+<a href="https://github.com/Stiffstream/sobjectizer">sobjectizer</a> and <a href="https://actor-framework.org/">caf</a>. Every <code>address</code> (message delivery endpoint) is generated
+by a <code>supervisor</code> a reference to the supervisor is embedded into the <code>address</code>.
+So, during messages processing phase by each supervisor, it compared the reference
+in message destination <code>address</code> with the self (<code>this</code>), and if the match occurs
+the message was routed locally; otherwise the message was delivered for other
+<code>supervisor</code> for further (local) routing.</p>
+
+<p>Since <a href="https://github.com/basiliscos/cpp-rotor/">rotor</a> <code>v0.03</code> <code>address</code> object also embeds <code>locality</code> (<code>const void*</code>). If
+it matches to the <code>locality</code> of the supervisor, then the destination supervisor is
+taken from the <code>address</code> and the message is <em>immediately locally routed</em> in the
+context of the destination supervisor.</p>
+
+<p>To make it possible, all supervisors with the same locality have to share the
+same queue of messages. The obvious way to achieve that is that child-supervisors
+with the same locality use root supervisor&#39;s messages queue.</p>
+
+<p>In other words, a message is sent to locality, where all it&#39;s supervisors are
+<em>peers entry points</em>.</p>
+
+
+
+</article>
+
+<ul class="pager">
+    <li class="prev">
+            <button disabled>
+                ← Older
+            </button>
+    </li>
+    <li class="next">
+            <a class="button button-primary" href="/blog/" rel="next">
+                Newer →
+            </a>
+    </li>
+</ul>
+
+
+
+
+                    </main>
+                </div>
+
+                <div class="three columns sidebar">
+                    
+                        <nav id="tags">
+        <h1>Tags</h1>
+        <ul class="list-inline">
+            <li><a href="/blog/tag/c/">c++</a></li>
+            <li><a href="/blog/tag/rotor/">rotor</a></li>
+        </ul>
+    </nav>
+
+                            <h1>Feeds</h1>
+        <ul class="list-inline">
+            <li>
+                <a href="/blog/index.atom" rel="alternate" type="application/atom+xml">
+                    Atom
+                </a>
+            </li>
+            <li>
+                <a href="/blog/index.rss" rel="alternate" type="application/rss+xml">
+                    RSS
+                </a>
+            </li>
+        </ul>
+
+                </div>
+            </div>
+        </div>
+        <footer>
+            
+            <div class="container tagline">
+                <a href="http://preaction.me/statocles">Made with Statocles</a><br>
+                <a href="http://www.perl.org">Powered by Perl</a>
+            </div>
+        </footer>
+
+
+    </body>
+</html>
