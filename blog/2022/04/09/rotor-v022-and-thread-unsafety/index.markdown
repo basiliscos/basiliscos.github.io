@@ -66,6 +66,9 @@ and the frequency of checking it, i.e.:
 above with `sigaction` call). When it detects the flag is set to
 `true` it shuts self down.
 
+The full example of usage can be seen at
+[examples/thread/sha512.cpp](https://github.com/basiliscos/cpp-rotor/blob/master/examples/thread/sha512.cpp)
+
 
 `BUILD_THREAD_UNSAFE` is turned off by default. You should explicitly turn
 it on if you are knowning what you are doing.
